@@ -1,0 +1,12 @@
+{
+  "name": "raw-kinetiq",
+  "owner": { "name": "bani4kaskashka" },
+  "description": "RAW KINETIQ: kinetic lyric videos from a song file",
+  "plugins": [
+    {
+      "name": "raw-kinetiq",
+      "source": "./",
+      "description": "Turn any song into a kinetic typography lyric video, timed to every word and beat."
+    }
+  ]
+}
