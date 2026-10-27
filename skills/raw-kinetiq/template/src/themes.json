@@ -1,0 +1,32 @@
+{
+  "phonk": {
+    "vibe": "phonk, trap, drill, dark hip-hop: black, blood red, tape grit",
+    "bg": "#07060a", "text": "#f4f1ea", "accent": "#ff1f3d", "accent2": "#00ebff", "dim": "rgba(244,241,234,0.55)",
+    "font": "Anton", "upper": true, "grit": 1
+  },
+  "neon": {
+    "vibe": "synthwave, EDM, house, hyperpop-lite: deep purple night, magenta and cyan",
+    "bg": "#08041a", "text": "#f6f0ff", "accent": "#ff2bd6", "accent2": "#00e5ff", "dim": "rgba(246,240,255,0.55)",
+    "font": { "family": "Unbounded", "weight": 800 }, "upper": true, "grit": 0.6
+  },
+  "toxic": {
+    "vibe": "rage, hyperpop, punk, metalcore: acid green on black, loud",
+    "bg": "#050605", "text": "#f2ffe6", "accent": "#b6ff00", "accent2": "#ff2a6d", "dim": "rgba(242,255,230,0.5)",
+    "font": "Rubik Mono One", "upper": true, "grit": 1
+  },
+  "gold": {
+    "vibe": "luxury rap, boom bap, soul samples: warm black and gold",
+    "bg": "#0b0806", "text": "#fbf3e2", "accent": "#f2b631", "accent2": "#ff6a2a", "dim": "rgba(251,243,226,0.5)",
+    "font": "Bebas Neue", "upper": true, "grit": 0.7
+  },
+  "ice": {
+    "vibe": "R&B, ambient, sad/dreamy, lo-fi: cold blue night, soft",
+    "bg": "#05080d", "text": "#eaf6ff", "accent": "#7fd3ff", "accent2": "#b388ff", "dim": "rgba(234,246,255,0.5)",
+    "font": { "family": "Syne", "weight": 800 }, "upper": false, "grit": 0.5
+  },
+  "paper": {
+    "vibe": "pop, indie, acoustic, upbeat: light paper background, ink and red",
+    "bg": "#efe9dd", "text": "#141210", "accent": "#ff3b1f", "accent2": "#1f6bff", "dim": "rgba(20,18,16,0.55)",
+    "font": "Archivo Black", "upper": true, "grit": 0.45
+  }
+}

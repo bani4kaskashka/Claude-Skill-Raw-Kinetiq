@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup of the shared timing environment (Whisper, Demucs, librosa; CPU builds).
+# One-time setup of the shared environment (Whisper, Demucs, librosa, Pillow; CPU builds).
 # Lives outside the skill so the skill folder stays small and git-friendly.
 # Usage: bash setup_env.sh            (idempotent: exits fast when already set up)
 set -euo pipefail
@@ -7,7 +7,7 @@ set -euo pipefail
 VENV="${RAW_KINETIQ_VENV:-$HOME/.raw-kinetiq/venv}"
 if [ -x "$VENV/Scripts/python.exe" ]; then PY="$VENV/Scripts/python.exe"; else PY="$VENV/bin/python"; fi
 
-if [ -x "$PY" ] && "$PY" -c "import faster_whisper, librosa, demucs, soundfile" 2>/dev/null; then
+if [ -x "$PY" ] && "$PY" -c "import faster_whisper, librosa, demucs, soundfile, PIL" 2>/dev/null; then
   echo "ready: $PY"
   exit 0
 fi
@@ -29,5 +29,5 @@ if [ "$(uname -s)" = Darwin ]; then
 else
   "$PY" -m pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 fi
-"$PY" -m pip install -q faster-whisper librosa soundfile demucs
-"$PY" -c "import faster_whisper, librosa, demucs, soundfile; print('ready:', '$PY')"
+"$PY" -m pip install -q faster-whisper librosa soundfile demucs pillow
+"$PY" -c "import faster_whisper, librosa, demucs, soundfile, PIL; print('ready:', '$PY')"

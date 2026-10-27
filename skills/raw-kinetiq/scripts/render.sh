@@ -7,6 +7,7 @@ set -euo pipefail
 PROJ="$1"; OUTFILE="$2"; shift 2
 case "$OUTFILE" in /*|?:*) ;; *) OUTFILE="$(pwd)/$OUTFILE" ;; esac
 cd "$PROJ/video"
+node prep.mjs
 npx remotion render src/index.ts LyricVideo "$OUTFILE" \
   --codec=h264 --crf=18 --audio-codec=aac --audio-bitrate=320k \
   --gl=angle --concurrency=75% "$@"

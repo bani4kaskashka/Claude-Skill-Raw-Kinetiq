@@ -4,6 +4,9 @@ import { renderStill, selectComposition } from "@remotion/renderer";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
+// fonts first (any change to config.json "fonts" is picked up here)
+await import("./prep.mjs");
+
 const times = process.argv.slice(2).map(Number);
 mkdirSync("stills", { recursive: true });
 const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts") });

@@ -1,7 +1,7 @@
 {
   "name": "raw-kinetiq",
-  "description": "Turn any song into a kinetic typography lyric video. Words timed with Whisper and a Demucs vocal stem, visuals that follow the beat, rendered with Remotion.",
-  "version": "1.0.0",
+  "description": "Turn any song into a kinetic typography lyric video designed for that song: words timed with Whisper and a Demucs vocal stem, colours, fonts and motion from what the song is about, your own images and cutouts, and a self-check before rendering.",
+  "version": "1.1.0",
   "author": { "name": "bani4kaskashka" },
   "homepage": "https://github.com/bani4kaskashka/Claude-Skill-Raw-Kinetiq",
   "repository": "https://github.com/bani4kaskashka/Claude-Skill-Raw-Kinetiq",

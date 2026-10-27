@@ -13,7 +13,11 @@ Per section you can set:
   lyrics            which lyric section (its id in lyrics.txt order, e.g. "Chorus 2") fills it
   lines             {"<line idx>": [from, to]} pin a line inside a window (chants: snapped to onsets)
   all               [line idx...] chant lines that get one hit per chop actually sung
-  modes             {"<line idx>": "verse|drop|chant|tunnel|shout|outro"} force a line's style
+  modes             {"<line idx>": "verse|drop|chant|tunnel|shout|outro|<custom>"} force a line's style
+                    (custom = a line style written in video/src/custom)
+  colors            this section's own palette {"bg", "text", "accent", "accent2", "dim"}
+  motion            this section's own motion, same shape as config.json "motion" (src/motion.ts)
+  scene             this section's own background layers by name, e.g. ["bokeh", "beams"]
   preferVocals      true: trust the vocal-stem transcript over the full-mix one here
   bars, fast, flashAt   break extras: bar counter in the HUD, full-speed marquee, extra flashes
 Top level keys "tunnel" / "chant": words to force into those styles.
@@ -35,6 +39,8 @@ args = ap.parse_args()
 W = Path(args.work)
 OUT = Path(args.video) / "src" / "data"
 OUT.mkdir(parents=True, exist_ok=True)
+# a rebuild keeps the title and artist given last time
+PREV = json.load(open(OUT / "timeline.json", encoding="utf-8")) if (OUT / "timeline.json").exists() else {}
 
 ana = json.load(open(W / "analysis.json"))
 load = lambda name, default: json.load(open(W / name)) if (W / name).exists() else default
@@ -488,7 +494,7 @@ def build():
         nxt = out_lines[i + 1]["start"] if i + 1 < len(out_lines) else DUR
         sec_end = next(s["end"] for s in SECTIONS if s["name"] == l["section"])
         gap = 0.6 if l["mode"] == "outro" else 0.02  # outro lines fade slowly; don't overlap the next
-        l["out"] = round(min(nxt - gap, l["end"] + hold[l["mode"]], sec_end + 0.5), 3)
+        l["out"] = round(min(nxt - gap, l["end"] + hold.get(l["mode"], 0.8), sec_end + 0.5), 3)
         if l["mode"] == "chant":
             l["out"] = round(l["end"] + 0.5, 3)
         l["start"], l["end"] = round(l["start"], 3), round(l["end"], 3)
@@ -501,11 +507,11 @@ def build():
 
     timeline = {
         "duration": DUR,
-        "title": args.title or meta.get("title") or "UNTITLED",
-        "artist": args.artist or meta.get("artist") or "",
+        "title": args.title or meta.get("title") or PREV.get("title") or "UNTITLED",
+        "artist": args.artist or meta.get("artist") or PREV.get("artist") or "",
         "bpm": round(BPM, 2),
         "hooks": [h.upper() for h in hooks] or [(args.title or "LYRICS").upper()],
-        "sections": [{k: s[k] for k in ("name", "kind", "start", "end", "bars", "fast") if k in s} for s in SECTIONS],
+        "sections": [{k: s[k] for k in ("name", "kind", "start", "end", "bars", "fast", "motion", "scene", "colors") if k in s} for s in SECTIONS],
         "lines": out_lines, "kicks": ana["kicks"], "beats": beats, "downbeats": downbeats,
         "flashes": sorted([s["start"] for s in SECTIONS if s["kind"] == "drop"] + [f for s in SECTIONS for f in s.get("flashAt", [])]),
     }

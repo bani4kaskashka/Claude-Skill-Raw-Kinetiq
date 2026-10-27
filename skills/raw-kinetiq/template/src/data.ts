@@ -1,7 +1,8 @@
 import timelineJson from "./data/timeline.json";
 import energyJson from "./data/energy.json";
 import configJson from "./data/config.json";
-import { THEMES, Theme } from "./themes";
+import { Palette, THEMES, Theme, mixColor } from "./themes";
+import { Role, fitPx } from "./fonts";
 
 export type Word = { text: string; s: number; e: number };
 export type Mode = "verse" | "chant" | "tunnel" | "shout" | "drop" | "outro";
@@ -14,7 +15,31 @@ export type Line = {
   words: Word[];
 };
 export type SectionKind = "intro" | "verse" | "build" | "drop" | "break" | "outro";
-export type Section = { name: string; kind: SectionKind; start: number; end: number; bars?: number; fast?: boolean };
+export type Section = {
+  name: string;
+  kind: SectionKind;
+  start: number;
+  end: number;
+  bars?: number;
+  fast?: boolean;
+  /** this section's own motion (same shape as config.motion) */
+  motion?: object;
+  /** this section's own background layers, by name */
+  scene?: string[];
+  /** this section's own colours, crossfaded in */
+  colors?: Partial<Palette>;
+};
+
+/** A user image placed in the video (see assets.tsx). */
+export type Asset = {
+  file: string;
+  as: "backdrop" | "cutout" | "poster" | "flash" | "texture";
+  /** when: section names, section kinds, or [start, end] seconds; all of them when left out */
+  sections?: string[];
+  kinds?: SectionKind[];
+  at?: [number, number][];
+  [k: string]: unknown;
+};
 
 export const timeline = timelineJson as {
   duration: number;
@@ -37,8 +62,16 @@ export const config = configJson as {
   fps: number;
   audio: string;
   theme: string;
-  /** optional colour overrides on top of the theme */
-  colors?: Partial<Pick<Theme, "bg" | "text" | "accent" | "accent2" | "dim">>;
+  /** any colours, on top of the theme's */
+  colors?: Partial<Palette>;
+  /** any Google Font or local file per role (prep.mjs fetches them) */
+  fonts?: Partial<Record<Role, unknown>>;
+  /** uppercase the lyrics (default: the theme's choice) */
+  upper?: boolean;
+  /** 0..1 grain, scanlines and vignette (default: the theme's) */
+  grit?: number;
+  /** the user's images */
+  assets?: Asset[];
   /** corner readouts, all off unless switched on here */
   overlays?: { artist?: boolean; section?: boolean; timer?: boolean; bpm?: boolean };
   /** old switch: hud true turns every overlay on */
@@ -47,13 +80,34 @@ export const config = configJson as {
   endCard?: boolean;
   /** "auto" (scenes change with the song), "calm" (soft clouds and dust), "classic" (the square tunnel) */
   background?: "auto" | "calm" | "classic";
-  /** max words on screen at once in verse/drop lines (default 3) */
-  chunk?: number;
+  /** how the lyrics move: a profile name from motion.ts, or {"profile", "verse", "drop", "energy", "scenes"} overrides */
+  motion?: string | object;
 };
 
 export const overlays = config.hud === true ? { artist: true, section: true, timer: true, bpm: true } : (config.overlays ?? {});
 
-export const theme: Theme = { ...(THEMES[config.theme] ?? THEMES.phonk), ...(config.colors ?? {}) };
+const BASE: Theme = {
+  ...(THEMES[config.theme] ?? THEMES.phonk),
+  ...(config.colors ?? {}),
+  ...(config.upper !== undefined ? { upper: config.upper } : {}),
+  ...(config.grit !== undefined ? { grit: config.grit } : {}),
+};
+
+/** The live palette. Sections can shift it ("colors"), so read it while rendering, never cache it. */
+export const theme: Theme = { ...BASE };
+const KEYS = ["bg", "text", "accent", "accent2", "dim"] as const;
+const PAINT_FADE = 0.9;
+
+/** Set `theme` to the palette at time t, crossfading at section changes. Called once per frame. */
+export const paint = (t: number) => {
+  const secs = timeline.sections;
+  let i = secs.findIndex((s) => t >= s.start && t < s.end);
+  if (i < 0) i = secs.length - 1;
+  const cur = { ...BASE, ...(secs[i]?.colors ?? {}) };
+  const p = i > 0 ? Math.min(1, (t - secs[i].start) / PAINT_FADE) : 1;
+  const prev = p < 1 ? { ...BASE, ...(secs[i - 1].colors ?? {}) } : cur;
+  for (const k of KEYS) theme[k] = mixColor(prev[k], cur[k], p);
+};
 
 // Layout: everything was designed on 1920x1080. U scales sizes, X/Y scale offsets,
 // TS shrinks type a little in portrait where lines are narrower.
@@ -64,8 +118,9 @@ export const X = W / 1920;
 export const Y = H / 1080;
 export const TS = W >= H ? 1 : 0.8;
 
-/** Font size that keeps `chars` characters of display type inside `share` of the width. */
-export const fit = (max: number, chars: number, share = 0.86) => Math.min(max * TS * U, (W * share) / (Math.max(chars, 1) * theme.charW));
+/** Font size (px) that keeps `text` on one line inside `share` of the frame width; `max` is px at 1080p. */
+export const fit = (max: number, text: string, share = 0.86, role: Role = "display", tracking = 0) =>
+  fitPx(text, max * TS * U, W * share, role, tracking);
 
 export const caps = (s: string) => (theme.upper ? s.toUpperCase() : s);
 

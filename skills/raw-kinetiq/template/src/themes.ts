@@ -1,76 +1,61 @@
-import { loadFont as anton } from "@remotion/google-fonts/Anton";
-import { loadFont as bebas } from "@remotion/google-fonts/BebasNeue";
-import { loadFont as archivo } from "@remotion/google-fonts/ArchivoBlack";
-import { loadFont as rubikMono } from "@remotion/google-fonts/RubikMonoOne";
-import { loadFont as syne } from "@remotion/google-fonts/Syne";
-import { loadFont as unbounded } from "@remotion/google-fonts/Unbounded";
-import { loadFont as spaceMono } from "@remotion/google-fonts/SpaceMono";
+import themesJson from "./themes.json";
 
-export type Theme = {
-  /** what it suits, for picking one */
-  vibe: string;
+/*
+ * Colours and type. A theme is only a starting palette: config.json can set any colours
+ * ("colors") and any Google Font or local font file ("fonts"), and a section can shift the
+ * palette for itself ("colors" in sections.json). Mix freely; nothing here is a house style.
+ */
+
+export type Palette = {
   bg: string;
   text: string;
   accent: string;
-  /** the second RGB-split colour */
+  /** the second RGB-split / secondary colour */
   accent2: string;
-  /** tint of the dim HUD labels */
+  /** tint of dim labels */
   dim: string;
-  display: () => string;
+};
+
+/** A font: a Google Fonts family name ("Playfair Display"), or {family, weight, italic, file}. */
+export type FontSpec = string | { family: string; weight?: number | string; italic?: boolean; file?: string };
+
+export type Theme = Palette & {
+  /** what it suits, for picking one */
+  vibe: string;
+  /** display font for the lyrics */
+  font: FontSpec;
   /** uppercase the lyrics */
   upper: boolean;
   /** 0..1 how much grain/scanline/vignette */
   grit: number;
-  /** average uppercase glyph width in em, for fitting words to the frame */
-  charW: number;
 };
 
-// Each loader is only called for the theme in use, so only that font is fetched.
-const F = {
-  anton: () => anton("normal", { weights: ["400"], subsets: ["latin"] }).fontFamily,
-  bebas: () => bebas("normal", { weights: ["400"], subsets: ["latin"] }).fontFamily,
-  archivo: () => archivo("normal", { weights: ["400"], subsets: ["latin"] }).fontFamily,
-  rubikMono: () => rubikMono("normal", { weights: ["400"], subsets: ["latin"] }).fontFamily,
-  syne: () => syne("normal", { weights: ["800"], subsets: ["latin"] }).fontFamily,
-  unbounded: () => unbounded("normal", { weights: ["800"], subsets: ["latin"] }).fontFamily,
-};
-export const loadMono = () => spaceMono("normal", { weights: ["400"], subsets: ["latin"] }).fontFamily;
+/** starting palettes + fonts; the source of truth is themes.json (prep.mjs reads it too) */
+export const THEMES = themesJson as Record<string, Theme>;
 
-export const THEMES: Record<string, Theme> = {
-  phonk: {
-    vibe: "phonk, trap, drill, dark hip-hop: black, blood red, tape grit",
-    bg: "#07060a", text: "#f4f1ea", accent: "#ff1f3d", accent2: "#00ebff", dim: "rgba(244,241,234,0.55)",
-    display: F.anton, upper: true, grit: 1, charW: 0.45,
-  },
-  neon: {
-    vibe: "synthwave, EDM, house, hyperpop-lite: deep purple night, magenta and cyan",
-    bg: "#08041a", text: "#f6f0ff", accent: "#ff2bd6", accent2: "#00e5ff", dim: "rgba(246,240,255,0.55)",
-    display: F.unbounded, upper: true, grit: 0.6, charW: 0.86,
-  },
-  toxic: {
-    vibe: "rage, hyperpop, punk, metalcore: acid green on black, loud",
-    bg: "#050605", text: "#f2ffe6", accent: "#b6ff00", accent2: "#ff2a6d", dim: "rgba(242,255,230,0.5)",
-    display: F.rubikMono, upper: true, grit: 1, charW: 0.86,
-  },
-  gold: {
-    vibe: "luxury rap, boom bap, soul samples: warm black and gold",
-    bg: "#0b0806", text: "#fbf3e2", accent: "#f2b631", accent2: "#ff6a2a", dim: "rgba(251,243,226,0.5)",
-    display: F.bebas, upper: true, grit: 0.7, charW: 0.4,
-  },
-  ice: {
-    vibe: "R&B, ambient, sad/dreamy, lo-fi: cold blue night, soft",
-    bg: "#05080d", text: "#eaf6ff", accent: "#7fd3ff", accent2: "#b388ff", dim: "rgba(234,246,255,0.5)",
-    display: F.syne, upper: false, grit: 0.5, charW: 0.66,
-  },
-  paper: {
-    vibe: "pop, indie, acoustic, upbeat: light paper background, ink and red",
-    bg: "#efe9dd", text: "#141210", accent: "#ff3b1f", accent2: "#1f6bff", dim: "rgba(20,18,16,0.55)",
-    display: F.archivo, upper: true, grit: 0.45, charW: 0.66,
-  },
+const rgbOf = (c: string): [number, number, number, number] => {
+  const m = c.match(/rgba?\(([^)]+)\)/);
+  if (m) {
+    const [r, g, b, a = "1"] = m[1].split(",").map((x) => x.trim());
+    return [Number(r), Number(g), Number(b), Number(a)];
+  }
+  const h = c.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map((x) => x + x).join("") : h.slice(0, 6), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
 };
 
-export const hexA = (hex: string, a: number) => {
-  const h = hex.replace("#", "");
-  const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+/** Any colour (hex or rgb/rgba) at alpha `a`. */
+export const hexA = (c: string, a: number) => {
+  const [r, g, b] = rgbOf(c);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+/** Blend two colours, p = 0 gives `a`, 1 gives `b`. */
+export const mixColor = (a: string, b: string, p: number) => {
+  if (p <= 0) return a;
+  if (p >= 1) return b;
+  const x = rgbOf(a);
+  const y = rgbOf(b);
+  const m = (i: number) => x[i] + (y[i] - x[i]) * p;
+  return `rgba(${Math.round(m(0))},${Math.round(m(1))},${Math.round(m(2))},${m(3).toFixed(3)})`;
 };

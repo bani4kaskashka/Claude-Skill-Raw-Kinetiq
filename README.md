@@ -2,9 +2,11 @@
 
 A Claude Code skill that turns a song into a kinetic typography lyric video. Hand Claude an
 audio file, answer four quick questions, and get back an MP4 where every word hits when it's
-sung and the visuals move with the track.
+sung, and where the whole look, from the fonts to the background, is designed for that one song.
 
 ![RAW KINETIQ demo](media/demo.gif)
+
+*Above: a phonk track, so hard slams and slashes. Your song gets its own look.*
 
 ## What it does
 
@@ -13,18 +15,27 @@ sung and the visuals move with the track.
   Whisper can't hear get placed on vocal onsets instead.
 - **Reads the song's structure.** Beat grid, kick drums, energy and a 24-band spectrum,
   so drops, builds and breaks look different from verses.
-- **Lyrics in bursts.** Long lines play 2 or 3 words at a time, on one line. Each burst slams in,
-  lights up word by word as it's sung, and gets sliced in half before the next one lands.
-  Chants become giant sliced hits, the hook word becomes a tunnel you fall into, and
-  shouts take over the screen one word at a time.
-- **Backgrounds that follow the song.** Each section gets its own scene (drifting colour,
-  warp streaks, a synthwave grid, kick shockwaves, the hook words scrolling past), and a
-  repeated section gets a fresh variant. Kept sparse on purpose: the words are the show.
+- **Designed for each song.** No templates to pick from. Claude reads what the song is about
+  and how it feels, then designs its video from a toolkit: any colours, any Google Font, a
+  dozen ways for words to arrive and a dozen to leave, layouts from left-aligned diary lines to
+  words stacked like doors, palettes that shift between sections, and backgrounds that react to
+  the beat. When the song has an image the toolkit doesn't (a song about being watched gets a
+  building whose windows light up one by one), Claude writes it for that song. Two songs
+  should never come out looking alike.
+- **Uses your images.** Cover art, photos, a picture of you: send them in the chat or point
+  to a folder. Claude looks at each one, cuts out people and objects when that helps, picks
+  colours from them, and places them where the song needs them (a backdrop for the bridge, a
+  cutout beside the verses that punches on the kick, a photo flashing in on the chorus).
+- **Checks its own work.** Before rendering, a self-check renders the whole song at 4 frames
+  a second and measures every piece of text: running off the frame, lines piling up, gaps while
+  someone is singing, text that's hard to read over an image. Claude fixes what it finds and
+  reviews a contact sheet of the whole video against the song's feel before the real render.
 - **Any format.** 16:9, vertical 9:16 for TikTok/Reels/Shorts, or square. 60 fps by default.
-- **Six looks:** `phonk`, `neon`, `toxic`, `gold`, `ice`, `paper`, picked from the genre or by you.
 
-Before it starts, Claude asks four quick questions (format, look, optional corner overlays
-like artist name or timer, end title card). Say "just do it" and it uses the defaults.
+Before it starts, Claude asks four quick questions (format, feel, optional corner overlays
+like artist name or timer, and whether you have images to use). Pick "designed from the song"
+for the feel, or describe the vibe you want in your own words. Say "just do it" and it decides
+everything.
 
 ## Requirements
 
@@ -69,13 +80,16 @@ first time; it's cached) and about 10 minutes to render at 1080p60.
 ## Tweaking
 
 After the first render, ask Claude for changes ("the chant at 0:08 is early", "less going
-on in the background", "try the neon look"). Under the hood, each song gets a project folder
-with:
+on in the background", "make the chorus hit harder", "put the cover art behind the bridge").
+Under the hood, each song gets a project folder with:
 
-- `work/lyrics.txt` and `work/sections.json`: the lyrics and the timing of each section
-  and line
-- `video/src/data/config.json`: theme, colours, size, fps, overlays, end card,
-  background style (`auto`, `calm`, `classic`) and burst size (`chunk`)
+- `work/lyrics.txt` and `work/sections.json`: the lyrics, the timing of each section and line,
+  and per-section looks
+- `video/src/data/config.json`: the design (colours, fonts, motion, backgrounds, your images),
+  size, fps, overlays and end card
+- `video/src/custom/`: anything written just for this song
+
+The whole toolkit is listed in [skills/raw-kinetiq/references/toolkit.md](skills/raw-kinetiq/references/toolkit.md).
 
 Re-rendering never re-runs the slow analysis.
 
@@ -84,8 +98,11 @@ Re-rendering never re-runs the slow analysis.
 1. `prepare.py`: beat and energy analysis (librosa), Demucs vocal separation, two Whisper passes
 2. `build_timeline.py`: aligns your lyrics to the transcripts, proposes sections, picks a style
    per line, and flags lines it had to guess
-3. Claude reviews the guesses against the vocal onsets and energy, like an editor would
-4. A [Remotion](https://www.remotion.dev) project renders the video in headless Chrome
+3. Claude designs the video for this song and reviews the timing guesses against the vocal
+   onsets and energy, like an editor would
+4. `assets.py` brings in your images and cuts out subjects ([rembg](https://github.com/danielgatis/rembg))
+5. `check.sh` renders the song at 4 frames a second and reports layout and readability problems
+6. A [Remotion](https://www.remotion.dev) project renders the video in headless Chrome
 
 ## License
 
@@ -98,7 +115,9 @@ It builds on other projects with their own licenses:
   [remotion.dev/license](https://www.remotion.dev/license) before using it at work.
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT),
   [Demucs](https://github.com/facebookresearch/demucs) (MIT),
-  [librosa](https://github.com/librosa/librosa) (ISC), PyTorch (BSD)
-- Fonts come from Google Fonts (SIL Open Font License)
+  [librosa](https://github.com/librosa/librosa) (ISC), PyTorch (BSD), Pillow (MIT-CMU)
+- [rembg](https://github.com/danielgatis/rembg) (MIT) cuts out subjects from your images, only
+  when you ask for a cutout; its models download on first use
+- Fonts come from Google Fonts (mostly SIL Open Font License; each family has its own)
 
 Demo: "Cut" by ca11mebucky.

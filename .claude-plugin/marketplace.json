@@ -6,7 +6,7 @@
     {
       "name": "raw-kinetiq",
       "source": "./",
-      "description": "Turn any song into a kinetic typography lyric video, timed to every word and beat."
+      "description": "Turn any song into a kinetic typography lyric video designed for that song, timed to every word and beat."
     }
   ]
 }

@@ -161,8 +161,8 @@ export const Hud: React.FC<{ t: number; section: Section; mono: string }> = ({ t
 };
 
 /** Short flash at the top of each drop. Accent-tinted and capped, never a full-white strobe. */
-export const DropFlash: React.FC<{ t: number }> = ({ t }) => {
-  const p = pulse(timeline.flashes, t, 5);
+export const DropFlash: React.FC<{ t: number; strength?: number }> = ({ t, strength = 1 }) => {
+  const p = pulse(timeline.flashes, t, 5) * strength;
   if (p < 0.01) return null;
   return <AbsoluteFill style={{ background: hexA(theme.accent, 0.45 * p), mixBlendMode: "screen" }} />;
 };

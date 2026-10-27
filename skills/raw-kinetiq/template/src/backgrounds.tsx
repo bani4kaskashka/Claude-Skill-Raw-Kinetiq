@@ -2,7 +2,10 @@ import React from "react";
 import { AbsoluteFill, random } from "remotion";
 import { H, Section, SectionKind, U, W, clamp01, config, energy, energyAt, lastAtOrBefore, pulse, theme, timeline } from "./data";
 import { Marquee, Tunnel, tunnelTravel } from "./fx";
+import { motionFor } from "./motion";
 import { hexA } from "./themes";
+import { AssetLayer } from "./assets";
+import { layers as customLayers } from "./custom";
 
 /*
  * Backgrounds change with the song: each kind of section gets its own scene, a repeated
@@ -10,7 +13,7 @@ import { hexA } from "./themes";
  * scenes crossfade at section changes. Everything reacts to the audio.
  */
 
-type LayerProps = { t: number; s: Section; progress: number; display: string };
+export type LayerProps = { t: number; s: Section; progress: number; display: string };
 
 // cumulative loudness, so audio-driven motion speeds up and slows down without ever jumping
 const CUM: number[] = (() => {
@@ -274,6 +277,98 @@ const Glitch: React.FC<LayerProps> = ({ t }) => {
 };
 
 const TunnelLayer: React.FC<LayerProps> = ({ t, s }) => <Tunnel t={t} section={s} travel={tunnelTravel(t, timeline.sections)} bare />;
+/** Halftone dot grid; dots swell with the bass and ripple out from the centre. */
+const Halftone: React.FC<LayerProps> = ({ t }) => {
+  const sub = energyAt(energy.sub, t);
+  const step = 46 * U;
+  const cols = Math.ceil(W / step) + 1;
+  const rows = Math.ceil(H / step) + 1;
+  const dots = [];
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++) {
+      const d = Math.hypot(x * step - W / 2, y * step - H / 2) / Math.max(W, H);
+      const v = 0.5 + 0.5 * Math.sin(d * 18 - t * 2.2);
+      const r = step * 0.42 * (0.15 + 0.85 * v * (0.35 + 0.65 * sub)) * (1 - d * 0.9);
+      if (r > 0.6) dots.push(<circle key={`${x}-${y}`} cx={x * step} cy={y * step} r={r} />);
+    }
+  return (
+    <svg width={W} height={H} style={{ position: "absolute", inset: 0, opacity: 0.16 }}>
+      <g fill={theme.accent}>{dots}</g>
+    </svg>
+  );
+};
+
+/** Soft light beams from above, slowly sweeping, brighter when the song is loud. */
+const Beams: React.FC<LayerProps> = ({ t }) => {
+  const rms = energyAt(energy.rms, t);
+  return (
+    <AbsoluteFill style={{ mixBlendMode: "screen" }}>
+      {[0, 1, 2, 3].map((i) => {
+        const a = Math.sin(t * (0.13 + i * 0.04) + i * 1.7) * 22 + (i - 1.5) * 14;
+        return (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: W * (0.2 + i * 0.2) - W * 0.06,
+              top: -H * 0.2,
+              width: W * 0.12,
+              height: H * 1.6,
+              transformOrigin: "50% 0",
+              transform: `rotate(${a}deg)`,
+              background: `linear-gradient(180deg, ${hexA(i % 2 ? theme.accent : theme.text, 0.1 + 0.18 * rms)} 0%, ${hexA(theme.bg, 0)} 80%)`,
+              filter: `blur(${24 * U}px)`,
+            }}
+          />
+        );
+      })}
+    </AbsoluteFill>
+  );
+};
+
+/** Big out-of-focus circles of light, drifting. */
+const Bokeh: React.FC<LayerProps> = ({ t }) => {
+  const rms = energyAt(energy.rms, t);
+  return (
+    <AbsoluteFill>
+      {SEEDS.slice(0, 16).map((p, i) => {
+        const r = (60 + p.c * 160) * U;
+        const x = (((p.a * W + t * (8 + p.b * 14) * U) % (W + 2 * r)) + W + 2 * r) % (W + 2 * r) - r;
+        const y = p.b * H + Math.sin(t * 0.2 + i) * 40 * U;
+        return (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: x - r,
+              top: y - r,
+              width: 2 * r,
+              height: 2 * r,
+              borderRadius: "50%",
+              background: `radial-gradient(circle, ${hexA(i % 3 ? theme.accent : theme.accent2, 0.16 + 0.14 * rms)} 0%, ${hexA(theme.bg, 0)} 70%)`,
+            }}
+          />
+        );
+      })}
+    </AbsoluteFill>
+  );
+};
+
+/** Diagonal stripes sliding by, faster when it is loud: a racing, graphic feel. */
+const Stripes: React.FC<LayerProps> = ({ t }) => {
+  const shift = (t * 40 + loudTravel(t) * 160) * U;
+  const w = 90 * U;
+  return (
+    <AbsoluteFill
+      style={{
+        opacity: 0.07,
+        background: `repeating-linear-gradient(-30deg, ${theme.text} 0px, ${theme.text} ${w * 0.35}px, transparent ${w * 0.35}px, transparent ${w}px)`,
+        backgroundPosition: `${shift}px 0`,
+      }}
+    />
+  );
+};
+
 const MarqueeLayer: React.FC<LayerProps> = ({ t, s, display }) => <Marquee t={t} section={s} display={display} />;
 
 type Layer = React.FC<LayerProps>;
@@ -291,11 +386,19 @@ const L = {
   glitch: Glitch,
   tunnel: TunnelLayer,
   marquee: MarqueeLayer,
+  halftone: Halftone,
+  beams: Beams,
+  bokeh: Bokeh,
+  stripes: Stripes,
+  // the song's own layers, written for it in src/custom
+  ...customLayers,
 };
 
-// Variants per section kind; the n-th section of a kind uses variant n (wrapping).
-// Kept to one main idea per scene, plus at most one quiet layer: the words are the show.
-const AUTO: Record<SectionKind, Layer[][]> = {
+// Scene families: the song's motion picks one ("scenes" in motion.ts), so a ballad gets soft
+// light while a drill track gets shockwaves. Within a family, the n-th section of a kind uses
+// variant n (wrapping). One main idea per scene plus at most one quiet layer: the words are the show.
+type Table = Record<SectionKind, Layer[][]>;
+const HARD: Table = {
   intro: [[L.aurora, L.drift]],
   verse: [[L.aurora, L.bars], [L.grid], [L.aurora, L.drift]],
   build: [[L.tunnel, L.rise]],
@@ -303,7 +406,31 @@ const AUTO: Record<SectionKind, Layer[][]> = {
   break: [[L.marquee], [L.marquee, L.gridFast], [L.warp, L.rings]],
   outro: [[L.aurora, L.drift]],
 };
-const CALM: Record<SectionKind, Layer[][]> = {
+const NEON: Table = {
+  intro: [[L.aurora, L.drift]],
+  verse: [[L.grid], [L.aurora, L.bars], [L.grid, L.drift]],
+  build: [[L.warp]],
+  drop: [[L.gridBoth, L.rings], [L.warp, L.diamonds]],
+  break: [[L.gridFast, L.marquee], [L.warp, L.bars]],
+  outro: [[L.aurora]],
+};
+const SOFT: Table = {
+  intro: [[L.aurora, L.drift]],
+  verse: [[L.aurora, L.drift], [L.aurora]],
+  build: [[L.aurora, L.rise]],
+  drop: [[L.aurora, L.drift]],
+  break: [[L.aurora, L.drift]],
+  outro: [[L.aurora, L.drift]],
+};
+const MINIMAL: Table = {
+  intro: [[L.drift]],
+  verse: [[]],
+  build: [[L.rise]],
+  drop: [[L.rings]],
+  break: [[L.drift]],
+  outro: [[]],
+};
+const CALM: Table = {
   intro: [[L.aurora, L.drift]],
   verse: [[L.aurora, L.drift]],
   build: [[L.aurora, L.rise]],
@@ -311,7 +438,7 @@ const CALM: Record<SectionKind, Layer[][]> = {
   break: [[L.aurora, L.marquee]],
   outro: [[L.aurora, L.drift]],
 };
-const CLASSIC: Record<SectionKind, Layer[][]> = {
+const CLASSIC: Table = {
   intro: [[L.tunnel]],
   verse: [[L.tunnel]],
   build: [[L.tunnel]],
@@ -319,12 +446,22 @@ const CLASSIC: Record<SectionKind, Layer[][]> = {
   break: [[L.tunnel, L.marquee]],
   outro: [[L.tunnel]],
 };
-const STYLES = { auto: AUTO, calm: CALM, classic: CLASSIC };
+const FAMILIES = { hard: HARD, neon: NEON, soft: SOFT, minimal: MINIMAL };
 
 const layersFor = (idx: number): Layer[] => {
   const s = timeline.sections[idx];
-  const table = STYLES[(config.background ?? "auto") as keyof typeof STYLES] ?? AUTO;
+  // a section can name its own layers in sections.json: "scene": ["aurora", "rings"]
+  const byName = (names: string[]) => names.map((n) => (L as Record<string, Layer>)[n]).filter(Boolean);
+  if (s.scene) return byName(s.scene);
+  const bg = config.background ?? "auto";
+  const scenes = motionFor(s).scenes;
   const n = timeline.sections.slice(0, idx).filter((x) => x.kind === s.kind).length;
+  // the motion can list its own layers per section kind: {"verse": [["bokeh"], ["beams"]], ...}
+  if (typeof scenes === "object" && bg === "auto") {
+    const variants = scenes[s.kind];
+    return variants?.length ? byName(variants[n % variants.length]) : [];
+  }
+  const table = bg === "calm" ? CALM : bg === "classic" ? CLASSIC : (FAMILIES[scenes as keyof typeof FAMILIES] ?? HARD);
   const variants = table[s.kind];
   return variants[n % variants.length];
 };
@@ -357,6 +494,7 @@ export const Backdrop: React.FC<{ t: number; display: string }> = ({ t, display 
           background: `radial-gradient(circle at 50% 52%, ${hexA(theme.accent, 0.08 + 0.22 * sub)} 0%, ${hexA(theme.accent, 0.03 + 0.06 * sub)} 35%, ${hexA(theme.bg, 0)} 70%)`,
         }}
       />
+      <AssetLayer t={t} layer="backdrop" />
       {mix < 1 && <SceneSet idx={idx - 1} t={t} opacity={1 - mix} display={display} />}
       <SceneSet idx={idx} t={t} opacity={mix} display={display} />
     </AbsoluteFill>
