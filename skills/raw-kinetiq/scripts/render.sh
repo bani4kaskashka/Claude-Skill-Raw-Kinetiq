@@ -8,7 +8,7 @@ PROJ="$1"; OUTFILE="$2"; shift 2
 case "$OUTFILE" in /*|?:*) ;; *) OUTFILE="$(pwd)/$OUTFILE" ;; esac
 cd "$PROJ/video"
 node prep.mjs
-npx remotion render src/index.ts LyricVideo "$OUTFILE" \
+./node_modules/.bin/remotion render src/index.ts LyricVideo "$OUTFILE" \
   --codec=h264 --crf=18 --audio-codec=aac --audio-bitrate=320k \
   --gl=angle --concurrency=75% "$@"
 ffprobe -v error -show_entries format=duration,size:stream=codec_name,width,height,r_frame_rate -of default=nw=1 "$OUTFILE"

@@ -300,7 +300,7 @@ Everything below is a re-render; no re-analysis needed. Run the check again afte
 - **Something new for this song:** write it in `video/src/custom/index.tsx`.
 - **Format:** rerun `new_project.sh` with a new `--size` and re-render. The layout scales to any aspect ratio.
 - **Timing:** edit `sections.json` or `lyrics.txt`, rerun `build_timeline.py`, then render.
-- **Scrub it live:** `cd video && npx remotion studio src/index.ts` opens a preview with a timeline.
+- **Scrub it live:** `cd video && ./node_modules/.bin/remotion studio src/index.ts` opens a preview with a timeline.
 - **New tools for every song** go in `SKILL/template/src/`.
 
 ## Notes

@@ -49,7 +49,23 @@ everything.
 - About 5 GB of free disk for the Python environment and models, set up on first use in
   `~/.raw-kinetiq/venv` (override with the `RAW_KINETIQ_VENV` environment variable)
 
-Everything runs locally. Nothing is uploaded anywhere.
+Everything runs locally. Nothing is uploaded anywhere: your song, lyrics and images never leave
+your computer.
+
+### What it downloads
+
+Only on first use, and only from these sources:
+
+- **Python packages** into `~/.raw-kinetiq/venv` with pip, from PyPI: faster-whisper, librosa,
+  soundfile, demucs, pillow, and PyTorch (the CPU build comes from download.pytorch.org).
+  rembg is added only the first time you ask for a cutout.
+- **Node packages** into each song's `video/` folder with npm: Remotion and its packages, pinned
+  to an exact version in `template/package.json`. Remotion fetches its own headless Chrome for
+  rendering.
+- **Models:** Whisper large-v3 (from Hugging Face, through faster-whisper), the Demucs `htdemucs`
+  model (from Meta's public download server), and rembg's cutout models (from GitHub releases),
+  each cached on your disk after the first download.
+- **Fonts:** the Google Fonts the design uses, saved into the song's project.
 
 ## Install
 
