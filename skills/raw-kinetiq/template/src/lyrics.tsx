@@ -128,9 +128,10 @@ const EXIT_DUR: Record<Exit, number> = {
   scatter: 0.45,
   glitch: 0.22,
   wipe: 0.25,
+  drift: 1.4,
 };
 // exits slow enough that they must be done before the next burst lands in the same spot
-const SLOW_EXIT = new Set<Exit>(["fade", "blur", "fall", "zoom", "sink", "scatter", "wipe"]);
+const SLOW_EXIT = new Set<Exit>(["fade", "blur", "fall", "zoom", "sink", "scatter", "wipe", "drift"]);
 // enters that animate the whole burst at once (the rest animate each word as it is sung)
 const ENTER_DUR: Partial<Record<Part["enter"], number>> = { slam: 0.13, fade: 0.35, zoom: 0.3, glitch: 0.22, wipe: 0.13 };
 
@@ -244,6 +245,24 @@ const BurstWord: React.FC<{ w: Word; t: number; part: Part; e: number; seed: str
         />
       );
     }
+    case "breathe": {
+      const q = clamp01(since / 0.6);
+      const k = 1 - easeOutExpo(q);
+      return (
+        <span
+          style={{
+            display: "inline-block",
+            opacity: sung ? Math.min(1, q * 2.2) : 0,
+            filter: k > 0.02 ? `blur(${k * 9 * U}px)` : undefined,
+            letterSpacing: `${0.22 * k}em`,
+            transform: `translateY(${k * 0.12}em)`,
+            ...ink,
+          }}
+        >
+          {text}
+        </span>
+      );
+    }
     case "type": {
       const span = Math.max(0.08, (w.e - w.s) * 0.8);
       const n = sung ? Math.ceil(text.length * clamp01((since - LEAD) / span + 0.01)) : 0;
@@ -288,7 +307,7 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
         const next = ci + 1 < chunks.length ? chunks[ci + 1][0].s - LEAD : null;
         // leave once the last word is done, but clear of the next burst ("cut" leaves exactly as it lands)
         // slow exits finish before the next burst lands in the same spot
-        const clear = SLOW_EXIT.has(part.exit) ? dur * 0.85 : 0.06;
+        const clear = part.exit === "drift" ? dur * 0.4 : SLOW_EXIT.has(part.exit) ? dur * 0.85 : 0.06;
         const out =
           next === null
             ? Math.max(first + 0.12, Math.min(line.out, nextLine - (SLOW_EXIT.has(part.exit) ? clear : 0)))
@@ -405,6 +424,12 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
             exitT = ` translateX(${(random(`hx${seed}${k}`) - 0.5) * 90 * U * e}px)`;
             exitOp = random(`ho${seed}${k}`) > e ? 1 - e * 0.5 : 0;
           } else if (part.exit === "wipe") clip = `inset(-30% -5% -30% ${easeInOut(e) * 105}%)`;
+          else if (part.exit === "drift") {
+            // quick to lift clear of the next burst, then a slow fade as it floats on
+            exitT = ` translateY(${-size * 1.7 * (1 - Math.pow(1 - e, 2))}px) scale(${1 + 0.05 * e})`;
+            exitOp = Math.pow(1 - e, 2.2);
+            exitBlur = 7 * e;
+          }
         }
         const blur = enterBlur + exitBlur;
         const settled = p > 0.97 && t < out && (part.enter !== "wipe" || t > lastE);
@@ -433,7 +458,7 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
               whiteSpace: whole ? "normal" : "nowrap",
               textAlign: align,
               maxWidth: maxW,
-              letterSpacing: part.enter === "fade" ? `${tracking + 0.05 * (1 - p)}em` : `${tracking}em`,
+              letterSpacing: part.enter === "fade" ? `${tracking + 0.05 * (1 - p)}em` : part.exit === "drift" && e > 0 ? `${tracking + 0.12 * e}em` : `${tracking}em`,
               textShadow: part.stroke ? undefined : rgb(chroma * (kind === "drop" ? 1.4 : 1)),
               transform: `translate(${x}px, ${(part.exit === "sink" ? 0 : y) + sink * size * 1.1}px) rotate(${r}deg)${skew}${enterT}${exitT} scale(${1 + 0.03 * beat})`,
               opacity: enterOp * exitOp,

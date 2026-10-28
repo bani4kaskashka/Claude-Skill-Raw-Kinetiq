@@ -10,6 +10,9 @@ Finds, in every sampled frame:
   contrast    text that is hard to read against what is behind it
   tiny        text too small to read on a phone
   gap         someone is singing but no lyric is on screen
+And across the song (with the lyrics masked out):
+  same-look   most sections look alike (must-fix), or a chorus looks just like its verse
+  still       a section where the picture barely moves
 
 Writes check/report.md, check/issues.png (the flagged frames, problems boxed in red) and
 check/overview.png (frames across the whole song, to judge the look and the flow).
@@ -191,6 +194,72 @@ for f in frames:
         if c is not None and c < 3:
             issues.append(("contrast", f, i["text"], [i], f"contrast {c:.1f}:1" + (", busy background" if spread > 0.3 else "")))
 
+# ---- the look across the song: section by section, with the lyrics masked out
+GW, GH = 32, 18
+
+
+def look_of(f):
+    """32x18 thumbnail of a frame, and a mask of the cells that are not lyrics."""
+    p = frame_path(f)
+    if not p:
+        return None
+    im = Image.open(p).convert("RGB")
+    m = Image.new("L", im.size, 255)
+    d = ImageDraw.Draw(m)
+    for i in records[f]["items"]:
+        if i["kind"] == "lyric" and i["op"] > 0.05 and i["w"] > 0:
+            pad = 0.15 * i["h"]
+            d.rectangle([(i["x"] - pad) * scale, (i["y"] - pad) * scale, (i["x"] + i["w"] + pad) * scale, (i["y"] + i["h"] + pad) * scale], fill=0)
+    a, mk = im.resize((GW, GH), Image.BOX), m.resize((GW, GH), Image.BOX)
+    return [(a.getpixel((x, y)), mk.getpixel((x, y)) > 128) for y in range(GH) for x in range(GW)]
+
+
+def look_dist(A, B):
+    d = [sum(abs(pa[c] - pb[c]) for c in range(3)) / 3 for (pa, ma), (pb, mb) in zip(A, B) if ma and mb]
+    return sum(d) / max(1, len(d)) / 255
+
+
+def look_corr(A, B):
+    """How alike the layout of light and dark is (1 = the same picture), whatever the brightness."""
+    xs, ys = zip(*[(sum(pa) / 3, sum(pb) / 3) for (pa, ma), (pb, mb) in zip(A, B) if ma and mb] or [(0, 0)])
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    sx = sum((x - mx) ** 2 for x in xs) ** 0.5
+    sy = sum((y - my) ** 2 for y in ys) ** 0.5
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / max(1e-6, sx * sy)
+
+
+def look_mean(looks):
+    out = []
+    for cells in zip(*looks):
+        ok = [p for p, m in cells if m]
+        out.append((tuple(sum(p[c] for p in ok) / len(ok) for c in range(3)), True) if ok else ((0, 0, 0), False))
+    return out
+
+
+sec_looks = []
+for s in timeline["sections"]:
+    fs = [f for f in frames if s["start"] <= f / fps < s["end"]][::2]
+    looks = [x for x in (look_of(f) for f in fs) if x]
+    if len(looks) < 3:
+        continue
+    move = sum(look_dist(a, b) for a, b in zip(looks, looks[1:])) / (len(looks) - 1)
+    sec_looks.append({"s": s, "look": look_mean(looks), "move": move, "first": fs[0], "last": fs[-1]})
+alike = lambda a, b: look_corr(a["look"], b["look"]) > 0.9 and look_dist(a["look"], b["look"]) < 0.04
+song_look = []  # findings about the whole song, added to the report below
+pairs = [(a, b) for i, a in enumerate(sec_looks) for b in sec_looks[i + 1:]]
+if len(sec_looks) >= 4 and sum(alike(a, b) for a, b in pairs) >= 0.5 * len(pairs):
+    song_look.append({"kind": "same-look", "text": "", "first": frames[0], "last": frames[-1], "n": 1, "boxes": [], "fix": True,
+                      "detail": f"{100 * sum(alike(a, b) for a, b in pairs) / len(pairs):.0f}% of section pairs look alike: give sections their own scenes, camera and framing"})
+else:
+    for a, b in zip(sec_looks, sec_looks[1:]):
+        if b["s"]["kind"] == "drop" and a["s"]["kind"] != "drop" and alike(a, b):
+            song_look.append({"kind": "same-look", "text": f"{a['s']['name']} / {b['s']['name']}", "first": b["first"], "last": b["last"], "n": 1, "boxes": [],
+                              "detail": "the chorus looks just like what comes before it"})
+for x in sec_looks:
+    if x["move"] < 0.0025 and x["s"]["end"] - x["s"]["start"] > 6:
+        song_look.append({"kind": "still", "text": x["s"]["name"], "first": x["first"], "last": x["last"], "n": 1, "boxes": [],
+                          "detail": "the picture barely moves"})
+
 # group repeats of the same problem on the same text into one finding with a time range
 step = meta["every"]
 groups = []
@@ -209,13 +278,13 @@ for f in gaps:
         runs.append([f, f])
 gap_runs = [r for r in runs if r[1] - r[0] >= step]  # at least two samples in a row
 
-ORDER = {"off-frame": 0, "overlap": 1, "crossing": 2, "gap": 3, "contrast": 4, "tiny": 5, "over-image": 6}
-findings = groups
+ORDER = {"off-frame": 0, "overlap": 1, "crossing": 2, "gap": 3, "contrast": 4, "tiny": 5, "over-image": 6, "same-look": 7, "still": 8}
+findings = groups + song_look
 for a, b in gap_runs:
     findings.append({"kind": "gap", "text": "", "first": a, "last": b, "n": (b - a) // step + 1, "boxes": [], "detail": f"{(b - a) / fps:.1f}s with no lyric on screen"})
 findings.sort(key=lambda x: (ORDER[x["kind"]], x["first"]))
 # a crossing is one line animating over another; a split second of it is a transition, longer is a pile-up
-serious = [x for x in findings if x["kind"] in ("off-frame", "overlap", "gap") or (x["kind"] == "crossing" and x["last"] > x["first"]) or (x["kind"] == "contrast" and float(x["detail"].split()[1].split(":")[0]) < 2)]
+serious = [x for x in findings if x.get("fix") or x["kind"] in ("off-frame", "overlap", "gap") or (x["kind"] == "crossing" and x["last"] > x["first"]) or (x["kind"] == "contrast" and float(x["detail"].split()[1].split(":")[0]) < 2)]
 
 out = [f"# Check: {timeline.get('title') or proj.name}", ""]
 out.append(f"{len(frames)} frames checked ({len(frames) / max(1, (frames[-1] - frames[0]) / fps):.1f}/s). "

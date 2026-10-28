@@ -54,7 +54,12 @@ export const timeline = timelineJson as {
   downbeats: number[];
   flashes: number[];
 };
-export const energy = energyJson as { sub: number[]; rms: number[]; high: number[]; spec?: number[][] };
+/**
+ * Loudness curves, 60 values a second, 0..1: `sub` (bass), `rms` (whole mix), `high`, `voc` (the
+ * vocal stem), and `drive`: what the visuals pulse with, the bass on a beat-driven song or the
+ * voice on a soft one (see REACT).
+ */
+export const energy = energyJson as { sub: number[]; rms: number[]; high: number[]; voc?: number[]; spec?: number[][]; drive: number[] };
 
 export const config = configJson as {
   width: number;
@@ -83,6 +88,27 @@ export const config = configJson as {
   /** how the lyrics move: a profile name from motion.ts, or {"profile", "verse", "drop", "energy", "scenes"} overrides */
   motion?: string | object;
 };
+
+const motionCfg = config.motion;
+const songEnergy =
+  typeof motionCfg === "string"
+    ? (({ smooth: 0.25, story: 0.4 }) as Record<string, number>)[motionCfg] ?? 1
+    : ((motionCfg as { energy?: number } | undefined)?.energy ?? 1);
+/**
+ * What the visuals react to. "beat": kicks and bass (songs with drums that drive). "voice": the
+ * singing itself, every sung word is a hit and the vocal stem's loudness is the drive (soft,
+ * slow and sparse songs, where kicks barely exist). Set "react" in config.json's motion;
+ * by default a song with energy under 0.5 reacts to the voice.
+ */
+export const REACT: "beat" | "voice" = (motionCfg as { react?: "beat" | "voice" } | undefined)?.react ?? (songEnergy < 0.5 ? "voice" : "beat");
+
+// every sung word, at most one every 0.3 s: the voice's own "kicks"
+const wordHits: number[] = [];
+for (const s of timeline.lines.flatMap((l) => l.words.map((w) => w.s)).sort((a, b) => a - b))
+  if (!wordHits.length || s - wordHits[wordHits.length - 1] >= 0.3) wordHits.push(s);
+/** the moments the visuals hit on: kicks, or sung words when the song reacts to the voice */
+export const HITS = REACT === "voice" && wordHits.length ? wordHits : timeline.kicks;
+energy.drive = REACT === "voice" ? (energy.voc ?? energy.rms) : energy.sub;
 
 export const overlays = config.hud === true ? { artist: true, section: true, timer: true, bpm: true } : (config.overlays ?? {});
 

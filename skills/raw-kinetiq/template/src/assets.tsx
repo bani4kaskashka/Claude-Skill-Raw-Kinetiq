@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, Img, random, staticFile } from "remotion";
-import { Asset, H, U, W, clamp01, config, easeOutExpo, energy, energyAt, lastAtOrBefore, pulse, theme, timeline } from "./data";
+import { Asset, H, HITS, U, W, clamp01, config, easeOutExpo, energy, energyAt, lastAtOrBefore, pulse, theme, timeline } from "./data";
 import { hexA } from "./themes";
 
 /*
@@ -59,7 +59,7 @@ const placeStyle = (place: string, h: number, w: number): React.CSSProperties =>
 };
 
 const Backdrop: React.FC<{ a: Asset; t: number; on: number }> = ({ a, t, on }) => {
-  const sub = energyAt(energy.sub, t);
+  const sub = energyAt(energy.drive, t);
   const zoom = str(a, "zoom", "in");
   const [s, e] = WINDOWS[ASSETS.indexOf(a)].find(([s0, e0]) => t >= s0 - 0.01 && t <= e0 + 1) ?? [0, timeline.duration];
   const k = clamp01((t - s) / Math.max(1, e - s));
@@ -87,7 +87,7 @@ const Backdrop: React.FC<{ a: Asset; t: number; on: number }> = ({ a, t, on }) =
 
 const Cutout: React.FC<{ a: Asset; t: number; on: number; framed?: boolean }> = ({ a, t, on, framed }) => {
   const react = str(a, "react", framed ? "float" : "kick");
-  const kick = react === "kick" ? pulse(timeline.kicks, t, 8) : 0;
+  const kick = react === "kick" ? pulse(HITS, t, 8) : 0;
   const float = react === "float" || framed ? Math.sin(t * 0.8 + random(a.file) * 6) * 12 * U : 0;
   const h = H * num(a, "size", framed ? 0.55 : 0.82);
   const w = framed ? h * num(a, "aspect", 1) : W * 0.6;
@@ -129,7 +129,7 @@ const Cutout: React.FC<{ a: Asset; t: number; on: number; framed?: boolean }> = 
 const Flash: React.FC<{ a: Asset; t: number; i: number }> = ({ a, t, i }) => {
   if (presence(i, t, 0.01) < 0) return null;
   const on = str(a, "on", "downbeats");
-  const hits = on === "kicks" ? timeline.kicks : on === "sections" ? timeline.sections.map((s) => s.start) : timeline.downbeats;
+  const hits = on === "kicks" ? HITS : on === "sections" ? timeline.sections.map((s) => s.start) : timeline.downbeats;
   const j = lastAtOrBefore(hits, t);
   if (j < 0 || j % Math.max(1, num(a, "every", 4)) !== 0) return null;
   const age = t - hits[j];

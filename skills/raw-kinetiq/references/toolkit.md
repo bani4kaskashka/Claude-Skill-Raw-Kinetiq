@@ -51,13 +51,14 @@ that argue with each other for a duet.
 ## Motion parts
 
 `"motion"` holds two parts, `verse` (verse lines) and `drop` (chorus, hook and drop lines), plus
-`energy` and `scenes`. A section can override any of it with `"motion": {...}` (same shape).
+`energy`, `react`, `camera` and `scenes`. A section can override any of it except `react` with
+`"motion": {...}` (same shape).
 
 | field | values |
 |---|---|
 | `burst` | most words on screen at once; `0` = the whole line, wrapping |
-| `enter` | `slam` crash in big + blurred, `rise` each word out of a mask, `fade` soft focus in, `pop` bounce per word, `type` letters as sung, `drop` fall in and bounce, `wipe` revealed left to right with the singing, `zoom` fly in from far, `flip` each word flips up, `scatter` letters gather from all over, `glitch` stutter in, `stretch` grow up from the baseline |
-| `exit` | `slash` cut in half diagonally, `cut` gone the frame the next lands, `fade` fade up, `blur` dissolve, `fall` letters drop away, `push` shoved sideways, `zoom` rush past the camera, `sink` sink behind a mask line, `scatter` letters blow apart, `glitch` stutter out, `wipe` wiped away |
+| `enter` | `slam` crash in big + blurred, `rise` each word out of a mask, `fade` soft focus in, `pop` bounce per word, `type` letters as sung, `drop` fall in and bounce, `wipe` revealed left to right with the singing, `zoom` fly in from far, `flip` each word flips up, `scatter` letters gather from all over, `glitch` stutter in, `stretch` grow up from the baseline, `breathe` each word exhales into place as sung (out of a blur, letters drawing together; nothing shows before it is sung) |
+| `exit` | `slash` cut in half diagonally, `cut` gone the frame the next lands, `fade` fade up, `blur` dissolve, `fall` letters drop away, `push` shoved sideways, `zoom` rush past the camera, `sink` sink behind a mask line, `scatter` letters blow apart, `glitch` stutter out, `wipe` wiped away, `drift` floats up and dissolves like smoke while the next burst arrives |
 | `layout` | `center`, `jump` hop between spots, `left`, `right`, `drift` float, `stack` one word per row, `scatter` a new spot each burst, `low` lower third, `high` upper third |
 | `size` | 1 = normal verse size (measured to fit, so big values are safe) |
 | `highlight` | colour of the word being sung: `accent`, `accent2`, `text` (none) or any CSS colour |
@@ -70,6 +71,19 @@ that argue with each other for a duet.
 
 `energy`: camera shake, kick punch, RGB split and flash strength. 0 = still, 0.2 = a breath,
 1 = normal, 1.4 = violent. `scenes`: see backgrounds.
+
+`react`: what the visuals pulse with. `"beat"` = kicks and bass. `"voice"` = the singing: every
+sung word is a hit (rings, glows, cutouts that kick) and the vocal stem's loudness is the drive
+(swells, halftone, light). Default: `voice` when `energy` is under 0.5, so soft songs with
+barely any drums still pulse. Use `voice` for any song where the singing carries it.
+
+`camera`: how the frame moves through a section. `still`, `float` (slow handheld drift),
+`push` / `pull` (slowly in / out across the section), `pan` (sideways), `rise` (cranes up),
+`orbit` (slowly turns), `breathe` (swells with the voice); or `{"move": "push", "amount": 1.5}`.
+The scene moves fully and the lyrics about a third as much, which gives depth. Moves blend
+into each other at section changes. Unset on a soft song (energy under 0.5): intro push,
+verse float, build push, chorus breathe, break orbit, outro pull. Unset on a hard song: still
+(kick shake does the work). Set it per section in `sections.json` to make each section a new shot.
 
 Line styles that are not bursts: **chant** (each chop a giant hit, sliced when the drop part
 exits with `slash`), **tunnel** (falling into the hook word), **shout** (one word at a time),
@@ -107,7 +121,13 @@ Built-in layers: `aurora` (soft colour clouds), `drift` and `rise` (dust / risin
 (perspective floor), `rings`, `diamonds` (shockwaves on kicks), `tunnel` (square tunnel),
 `marquee` (scrolling hook words), `halftone` (dot field swelling with the bass), `beams`
 (sweeping light from above), `bokeh` (out-of-focus lights), `stripes` (sliding diagonal bands),
-`glitch`. Keep it sparse: one main idea plus at most one quiet layer.
+`glitch`.
+
+Treat the background as a sequence of shots. Each section gets its own picture: a different
+layer mix, camera move, palette or framing of the central image, and the chorus always opens
+something up. Within one shot keep it clean (one main idea plus a quiet layer or two); across
+the song, change it. A custom layer that carries the whole song should itself change by
+section (see the example below), not just sit there.
 
 ## Assets (the user's images)
 
@@ -149,18 +169,24 @@ When the song has an image the toolkit can't show, write it. Kept on `--update`.
 - `Foreground`: drawn over everything every frame.
 
 Helpers: `theme` (the live palette), `timeline` (kicks, beats, downbeats, sections, lines),
-`energy` + `energyAt(curve, t)` (sub, rms, high), `pulse(arr, t, rate)` (decay since the last
-hit), `W`, `H`, `U` (1 at 1080p) from `../data`; `family(role)`, `textWidth`, `fitPx` from
+`energy` + `energyAt(curve, t)` (`drive` = what to pulse with, plus sub, rms, high, voc),
+`HITS` (kicks, or sung words on a voice-reactive song), `pulse(arr, t, rate)` (decay since the
+last hit), `REACT`, `W`, `H`, `U` (1 at 1080p) from `../data`; `family(role)`, `textWidth`, `fitPx` from
 `../fonts`; `hexA`, `mixColor` from `../themes`.
 
 Example (from a song about being watched, a man counting windows at night): a building facade
-whose windows light up one by one across the song, counting to twenty-five like the lyric,
-with an extra window lit for every bar of the chorus.
+whose windows light up one by one across the song, counting to twenty-five like the lyric.
+It tells a story by section: the verses frame the whole facade from across the street, the
+chorus pushes in on one lit window with a silhouette in it, the bridge turns the lights off
+except one, the outro pulls back to the street at dawn.
 
 ```tsx
-const Windows: React.FC<LayerProps> = ({ t, s }) => {
+const Windows: React.FC<LayerProps> = ({ t, s, progress }) => {
   const lit = Math.round(25 * Math.min(1, t / (timeline.duration - 8)));
-  // ...a grid of windows; the first `lit` of a fixed random order glow in theme.accent
+  const close = s.kind === "drop"; // the chorus frames one window, big
+  const dark = s.name.startsWith("Bridge"); // the bridge: every light out but one
+  // ...a grid of windows (or one window filling the frame when `close`); the first `lit` of a
+  // fixed random order glow in theme.accent, brightening with energyAt(energy.drive, t)
 };
 export const layers = { windows: Windows };
 ```
@@ -180,7 +206,8 @@ A paranoid soul song, "Count the Windows" (116 BPM, slow, sung, about being watc
     "verse": { "burst": 5, "enter": "wipe", "exit": "fade", "layout": "left", "size": 0.85, "highlight": "accent", "case": "as-is" },
     "drop": { "burst": 4, "enter": "rise", "exit": "sink", "layout": "center", "size": 1.55, "font": "alt", "highlight": "accent", "case": "as-is" },
     "energy": 0.15,
-    "scenes": { "verse": [["windows"], ["windows", "drift"]], "drop": [["windows", "beams"]], "build": [["windows", "bokeh"]], "outro": [["windows"]] }
+    "react": "voice",
+    "scenes": { "intro": [["bokeh"]], "verse": [["windows"], ["windows", "drift"]], "drop": [["windows", "beams"]], "build": [["rise", "aurora"]], "outro": [["windows", "aurora"]] }
   }
 }
 ```
@@ -188,6 +215,7 @@ A paranoid soul song, "Count the Windows" (116 BPM, slow, sung, about being watc
 with warmer chorus colours and a cold bridge whose words stack like doors in `sections.json`:
 
 ```json
+{ "name": "Chorus", "motion": { "camera": "push" } },
 { "name": "Bridge", "colors": { "bg": "#05080f", "accent": "#9db8ff" },
-  "motion": { "verse": { "burst": 3, "layout": "stack", "enter": "flip", "exit": "fade", "size": 1.1 } } }
+  "motion": { "camera": "orbit", "verse": { "burst": 3, "layout": "stack", "enter": "flip", "exit": "fade", "size": 1.1 } } }
 ```

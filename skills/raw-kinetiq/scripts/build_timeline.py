@@ -387,6 +387,102 @@ def propose_sections(sections):
 
 # ---------------------------------------------------------------- per section
 
+def vocal_envelope():
+    """Loudness of the vocal stem every 10 ms (cached in work/vocal_env.json), or None."""
+    path = W / "vocal_env.json"
+    if path.exists():
+        return json.load(open(path))
+    if not (W / "vocals.wav").exists():
+        return None
+    try:
+        import numpy as np
+        import soundfile as sf
+    except ImportError:
+        return None
+    y, sr = sf.read(W / "vocals.wav", dtype="float32", always_2d=True)
+    y = y.mean(axis=1)
+    hop = sr // 100
+    n = len(y) // hop
+    rms = np.sqrt((y[: n * hop].reshape(n, hop) ** 2).mean(axis=1))
+    env = {"step": 0.01, "rms": [round(float(v), 5) for v in rms]}
+    json.dump(env, open(path, "w"), separators=(",", ":"))
+    return env
+
+
+ENV = vocal_envelope()
+
+
+def vocal_curve(n):
+    """The vocal stem's loudness as n values at 60 a second, 0..1, quick to rise and slow to
+    fall, so visuals can swell with the voice (energy.voc in the video)."""
+    if not ENV:
+        return None
+    rms, step = ENV["rms"], ENV["step"]
+    raw = []
+    for i in range(n):
+        a, b = int(i / 60 / step), int((i + 1) / 60 / step) + 1
+        seg = rms[a:b]
+        raw.append(sum(seg) / len(seg) if seg else 0.0)
+    top = sorted(raw)[int(len(raw) * 0.97)] or 1.0
+    out, v = [], 0.0
+    for x in raw:
+        x = min(1.0, x / top)
+        v = x if x > v else v + (x - v) * 0.06
+        out.append(round(v, 3))
+    return out
+
+
+def trim_to_voice(words):
+    """Whisper often stretches a word back into the silence before it (the first word of a line
+    most of all), which puts the text up to seconds before it is sung. Move each long word's
+    start to where the vocal stem actually gets loud."""
+    if not ENV or not words:
+        return
+    rms, step = ENV["rms"], ENV["step"]
+    at = lambda t: min(len(rms) - 1, max(0, int(t / step)))
+    span = sorted(rms[at(words[0]["s"]):at(max(w["e"] for w in words)) + 1])
+    if not span:
+        return
+    # the line's sung level, and the noise floor of the whole stem
+    sung = span[int(len(span) * 0.8)]
+    floor = sorted(rms[:: 50])[len(rms[:: 50]) // 5]
+    thr = max(0.3 * sung, 3 * floor)
+    silent = lambda w: max(rms[at(w["s"]):at(w["e"]) + 1] or [0]) < thr
+    pushed = False
+    for q, w in enumerate(words):
+        if q and w["s"] < words[q - 1]["s"] + 0.02:
+            # the word before it moved past it
+            w["s"] = round(words[q - 1]["s"] + 0.02, 3)
+            w["e"] = max(w["e"], w["s"] + 0.12)
+            pushed = True
+        # a line's first word placed in silence (Whisper misheard where the line starts) moves to
+        # where the voice comes in, as far as the next word's end. A later word in silence was
+        # usually already sung just before, so it stays.
+        early = silent(w) and (q == 0 or pushed)
+        pushed = False
+        if w["e"] - w["s"] < 0.35 and not early:
+            continue
+        reach = (words[q + 1]["e"] if q + 1 < len(words) else w["e"] + 1.5) if early or q == 0 else w["e"]
+        i, end, far = at(w["s"]), at(w["e"]), at(reach)
+        # a line's first word can start inside the last line's held note: then it really starts
+        # after the breath, the quietest moment before it. Mid-line words only move when they are
+        # clearly stretched (a soft "th" or "s" is quiet but already sung).
+        first = q == 0
+        if first:
+            m = min(range(i, max(i + 1, end - 12)), key=lambda k: sum(rms[k:k + 3]))
+            if sum(rms[m:m + 3]) / 3 < thr:
+                i = m
+        lim = thr if first else max(0.15 * sung, 3 * floor)
+        # no voice in its own span (it was placed in the silence before it): keep looking
+        while i + 3 < far and not all(rms[i + k] > lim for k in range(4)):
+            i += 1
+        s = i * step - 0.04
+        if s > w["s"] + (0.1 if first else 0.3):
+            w["s"] = round(s if s >= w["e"] else min(s, w["e"] - 0.12), 3)
+            w["e"] = max(w["e"], w["s"] + 0.12)
+            pushed = q + 1 < len(words) and words[q + 1]["s"] < w["s"] + 0.02
+
+
 def pick_onsets(ons, n):
     if len(ons) > n:
         targets = [ons[0] + (ons[-1] - ons[0]) * k / max(1, n - 1) for k in range(n)] if n > 1 else [ons[0]]
@@ -431,6 +527,7 @@ def build():
                     n = len(at)
                 at = (at + [at[-1] + 0.3 * k for k in range(1, n - len(at) + 1)])[:n]
                 tw = [(a, min(at[q + 1] - 0.02, a + 0.45) if q + 1 < n else a + 0.5) for q, a in enumerate(at)]
+                l["byEar"] = True
             elif win and l["mode"] in ("chant", "shout", "tunnel", "outro"):
                 ons = [o for o in onsets if win[0] - 0.05 <= o < win[1]]
                 if li in sec.get("all", []) and ons:
@@ -477,6 +574,8 @@ def build():
             for tok, (s, e) in zip(l["tokens"], l["times"]):
                 e = min(max(e, s + 0.08), s + 1.2)
                 words.append({"text": tok, "s": round(s, 3), "e": round(e, 3)})
+            if l["mode"] not in RHYTHMIC and not l.get("byEar"):
+                trim_to_voice(words)
             for q in range(1, len(words)):
                 if words[q]["s"] < words[q - 1]["s"]:
                     words[q]["s"] = round(words[q - 1]["s"] + 0.02, 3)
@@ -507,8 +606,8 @@ def build():
 
     timeline = {
         "duration": DUR,
-        "title": args.title or meta.get("title") or PREV.get("title") or "UNTITLED",
-        "artist": args.artist or meta.get("artist") or PREV.get("artist") or "",
+        "title": args.title or PREV.get("title") or meta.get("title") or "UNTITLED",
+        "artist": args.artist or PREV.get("artist") or meta.get("artist") or "",
         "bpm": round(BPM, 2),
         "hooks": [h.upper() for h in hooks] or [(args.title or "LYRICS").upper()],
         "sections": [{k: s[k] for k in ("name", "kind", "start", "end", "bars", "fast", "motion", "scene", "colors") if k in s} for s in SECTIONS],
@@ -516,8 +615,11 @@ def build():
         "flashes": sorted([s["start"] for s in SECTIONS if s["kind"] == "drop"] + [f for s in SECTIONS for f in s.get("flashAt", [])]),
     }
     json.dump(timeline, open(OUT / "timeline.json", "w"), indent=1)
-    json.dump({"sub": ana["sub"], "rms": ana["rms"], "high": ana["high"], "spec": ana.get("spec", [])},
-              open(OUT / "energy.json", "w"), separators=(",", ":"))
+    curves = {"sub": ana["sub"], "rms": ana["rms"], "high": ana["high"], "spec": ana.get("spec", [])}
+    voc = vocal_curve(len(ana["sub"]))
+    if voc:
+        curves["voc"] = voc
+    json.dump(curves, open(OUT / "energy.json", "w"), separators=(",", ":"))
 
     print("\nsections:")
     for s in SECTIONS:

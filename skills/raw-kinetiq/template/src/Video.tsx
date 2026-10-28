@@ -1,9 +1,9 @@
 import React, { useEffect, useLayoutEffect, useState } from "react";
 import { AbsoluteFill, Audio, continueRender, delayRender, getInputProps, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { H, SHAKE, U, W, caps, clamp01, config, easeOutExpo, energy, energyAt, fit, paint, pulse, sectionAt, theme, timeline } from "./data";
+import { H, HITS, SHAKE, U, W, caps, clamp01, config, easeOutExpo, energy, energyAt, fit, paint, pulse, sectionAt, theme, timeline } from "./data";
 import { Backdrop } from "./backgrounds";
 import { AssetLayer } from "./assets";
-import { DropFlash, Hud, Overlay, shakeOffset } from "./fx";
+import { DropFlash, Hud, Overlay, camBack, camFront, cameraAt, shakeOffset } from "./fx";
 import { family, loadFonts } from "./fonts";
 import { motionFor } from "./motion";
 import { ChantLine, DropLine, LineProps, OutroLine, ShoutLine, TunnelLine, VerseLine, checkTag } from "./lyrics";
@@ -147,21 +147,24 @@ export const LyricVideo: React.FC = () => {
   // how hard the camera hits depends on the section and on the song: a ballad barely moves
   const motion = motionFor(section);
   const hit = SHAKE[section.kind] * motion.energy;
-  const kick = pulse(timeline.kicks, t, 9);
-  const sub = energyAt(energy.sub, t);
+  const kick = pulse(HITS, t, 9);
+  const sub = energyAt(energy.drive, t);
   const shake = shakeOffset(t, hit * (kick * 16 + sub * 2.5));
   const chroma = hit * (1.5 + kick * 9);
   const punch = 1 + hit * 0.03 * kick;
   const fadeIn = clamp01(t / 1.2);
+  const cam = cameraAt(t);
 
   const live = timeline.lines.filter((l) => t >= l.start - 0.25 && t <= l.out + 1.4);
 
   return (
     <AbsoluteFill style={{ backgroundColor: theme.bg, width: W, height: H }}>
       <AbsoluteFill style={{ opacity: fadeIn }}>
-        <Backdrop t={t} display={display} />
-        <AssetLayer t={t} layer="back" />
-        <AbsoluteFill style={{ transform: `translate(${shake.x}px, ${shake.y}px) rotate(${shake.r}deg) scale(${punch})` }}>
+        <AbsoluteFill style={{ transform: camBack(cam) }}>
+          <Backdrop t={t} display={display} />
+          <AssetLayer t={t} layer="back" />
+        </AbsoluteFill>
+        <AbsoluteFill style={{ transform: `${camFront(cam)} translate(${shake.x}px, ${shake.y}px) rotate(${shake.r}deg) scale(${punch})` }}>
           {live.map((l) => {
             const R = RENDERERS[l.mode] ?? VerseLine;
             return <R key={`${l.start}-${l.mode}`} line={l} t={t} display={display} chroma={chroma} />;

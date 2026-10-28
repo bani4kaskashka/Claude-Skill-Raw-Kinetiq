@@ -18,17 +18,19 @@ sung, and where the whole look, from the fonts to the background, is designed fo
 - **Designed for each song.** No templates to pick from. Claude reads what the song is about
   and how it feels, then designs its video from a toolkit: any colours, any Google Font, a
   dozen ways for words to arrive and a dozen to leave, layouts from left-aligned diary lines to
-  words stacked like doors, palettes that shift between sections, and backgrounds that react to
-  the beat. When the song has an image the toolkit doesn't (a song about being watched gets a
-  building whose windows light up one by one), Claude writes it for that song. Two songs
-  should never come out looking alike.
+  words stacked like doors, palettes that shift between sections, camera moves, and backgrounds
+  that react to the beat, or to the voice on soft songs. Every section is its own shot, so a
+  slow ballad keeps moving too. When the song has an image the toolkit doesn't (a song about
+  being watched gets a building whose windows light up one by one), Claude writes it for that
+  song. Two songs should never come out looking alike.
 - **Uses your images.** Cover art, photos, a picture of you: send them in the chat or point
   to a folder. Claude looks at each one, cuts out people and objects when that helps, picks
   colours from them, and places them where the song needs them (a backdrop for the bridge, a
   cutout beside the verses that punches on the kick, a photo flashing in on the chorus).
 - **Checks its own work.** Before rendering, a self-check renders the whole song at 4 frames
   a second and measures every piece of text: running off the frame, lines piling up, gaps while
-  someone is singing, text that's hard to read over an image. Claude fixes what it finds and
+  someone is singing, text that's hard to read over an image. It also flags a video that looks
+  the same from start to finish, or a section that barely moves. Claude fixes what it finds and
   reviews a contact sheet of the whole video against the song's feel before the real render.
 - **Any format.** 16:9, vertical 9:16 for TikTok/Reels/Shorts, or square. 60 fps by default.
 

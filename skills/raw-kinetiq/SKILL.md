@@ -104,13 +104,37 @@ Then make the design. Each of these is a real choice for this song, not a defaul
 - **Type:** any Google Font for `display` and a contrasting `alt`; case, tracking, outline.
 - **Motion:** verse and chorus parts mixed from the toolkit, and at least one section that does
   something of its own (a bridge that stacks, an outro that types, a last chorus that slams).
-- **Background:** built-in layers per section kind, and when the song's central image calls for
-  it, a layer you write for it in `video/src/custom/index.tsx` (the windows example in the
-  toolkit). Prefer one strong idea over many effects.
+- **Background:** the central image, carried through the song as a story with chapters (below).
+  Built-in layers per section kind, plus a layer you write for this song in
+  `video/src/custom/index.tsx` when the central image calls for it.
+- **Camera:** a move per section (push, pull, pan, rise, orbit, float, breathe) so each section
+  is a new shot.
 - **Assets:** where each of the user's images goes and how the text makes room for it (2c).
-- **Energy:** how hard the camera hits.
+- **Energy and react:** how hard the camera hits, and whether the visuals pulse with the beat
+  or with the voice.
 
-Experiment: borrow across genres (a soul song with brutalist type, a drill track in a serif),
+**A video is a sequence of shots, never one picture with words on it.** One central idea is
+right, one unchanging frame is not. Plan the song like a short film, section by section: what
+the viewer sees in the intro, how the first verse frames it, what opens up in the chorus, what
+breaks in the bridge, how it resolves. The central image should evolve: change the scale (a
+star field, then one star up close), the angle or camera move, the time of day, the palette,
+what is in the frame, the layers around it. A custom layer gets the section and its progress,
+so it can show different things in different sections. Every chorus must look clearly
+different from its verse, and the last chorus bigger than the first.
+
+**Slow is not static.** A soft, slow or whispered song moves slowly but never stops: the camera
+drifts or pushes, the light swells with the voice (`"react": "voice"`, the default for soft
+songs), words exhale into place (`breathe`) and float away (`drift`), scenes change at every
+section. Keep the feeling (tender stays tender) and still make each section a new picture.
+Give slow lyrics room to be big: fewer words at a time, set large, placed with intent (a
+corner, a column, stacked, beside the image), not a small subtitle on the same line all song.
+
+Before you write the config, list the sections with what each one shows: its scene, camera,
+lyric layout and palette. If two neighbouring sections share all four, change one. The
+self-check flags a video whose sections look alike (`same-look`) or a section that barely
+moves (`still`).
+
+Be bold by default. Experiment: borrow across genres (a soul song with brutalist type, a drill track in a serif),
 and avoid what earlier songs used (check other projects' `config.json` if you made them). The
 recipes in `template/src/motion.ts` are only examples of mixes that worked.
 
@@ -231,7 +255,9 @@ sheets. It flags:
 - **gap**: someone is singing and no lyric is on screen,
 - **contrast**: text hard to read against what is behind it,
 - **tiny**: text too small for a phone,
-- **over-image**: text sitting on a cutout or poster.
+- **over-image**: text sitting on a cutout or poster,
+- **same-look**: most sections look alike (must-fix), or a chorus looks just like its verse,
+- **still**: a section where the picture barely moves.
 
 Fix every `FIX` line at its source (layout, size, burst, timing, colours, image placement),
 and decide on each `look` line. Rerun until it is clean. `check.sh <project> 4 60 90` checks
@@ -240,7 +266,7 @@ just 60-90 s.
 Then open `video/check/overview.png` (30 frames across the song) and judge it as a viewer:
 - Does it look like this song: its story, its feeling, its world?
 - Does each section feel different where the music changes?
-- Is anything generic, cluttered or same-y?
+- Is anything generic, cluttered or same-y? Would a viewer feel each new section arrive?
 - Could it be mistaken for any other lyric video?
 
 If yes to the last, push the design further. For a closer look at moments that matter,

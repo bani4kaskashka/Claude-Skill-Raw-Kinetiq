@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, random } from "remotion";
-import { H, Section, SectionKind, U, W, clamp01, config, energy, energyAt, lastAtOrBefore, pulse, theme, timeline } from "./data";
+import { H, HITS, Section, SectionKind, U, W, clamp01, config, energy, energyAt, lastAtOrBefore, pulse, theme, timeline } from "./data";
 import { Marquee, Tunnel, tunnelTravel } from "./fx";
 import { motionFor } from "./motion";
 import { hexA } from "./themes";
@@ -103,7 +103,7 @@ const Drift: React.FC<LayerProps & { rise?: boolean }> = ({ t, progress, rise })
 const Warp: React.FC<LayerProps> = ({ t }) => {
   const travel = t * 0.12 + loudTravel(t) * 0.55;
   const maxR = Math.hypot(W, H) / 2;
-  const kick = pulse(timeline.kicks, t, 6);
+  const kick = pulse(HITS, t, 6);
   return (
     <AbsoluteFill>
       {SEEDS.slice(0, 150).map((p, i) => {
@@ -164,7 +164,7 @@ const Spectrum: React.FC<LayerProps> = ({ t }) => {
 const Grid: React.FC<LayerProps & { fast?: boolean; ceiling?: boolean }> = ({ t, fast, ceiling }) => {
   const cell = 130 * U;
   const travel = (t * (fast ? 2.2 : 0.7) + loudTravel(t) * (fast ? 6 : 2)) * cell;
-  const sub = energyAt(energy.sub, t);
+  const sub = energyAt(energy.drive, t);
   const plane = (flip: boolean) => (
     <div
       style={{
@@ -220,11 +220,11 @@ const Grid: React.FC<LayerProps & { fast?: boolean; ceiling?: boolean }> = ({ t,
 
 /** A shockwave out of the centre on every kick. */
 const Rings: React.FC<LayerProps & { diamond?: boolean }> = ({ t, diamond }) => {
-  const i = lastAtOrBefore(timeline.kicks, t);
+  const i = lastAtOrBefore(HITS, t);
   const maxR = Math.hypot(W, H) * 0.6;
   const rings = [];
   for (let k = i; k >= 0 && k > i - 4; k--) {
-    const age = t - timeline.kicks[k];
+    const age = t - HITS[k];
     if (age > 0.9) break;
     const p = 1 - Math.pow(1 - age / 0.9, 3);
     const r = (0.06 + 0.94 * p) * maxR;
@@ -279,7 +279,7 @@ const Glitch: React.FC<LayerProps> = ({ t }) => {
 const TunnelLayer: React.FC<LayerProps> = ({ t, s }) => <Tunnel t={t} section={s} travel={tunnelTravel(t, timeline.sections)} bare />;
 /** Halftone dot grid; dots swell with the bass and ripple out from the centre. */
 const Halftone: React.FC<LayerProps> = ({ t }) => {
-  const sub = energyAt(energy.sub, t);
+  const sub = energyAt(energy.drive, t);
   const step = 46 * U;
   const cols = Math.ceil(W / step) + 1;
   const rows = Math.ceil(H / step) + 1;
@@ -486,7 +486,7 @@ export const Backdrop: React.FC<{ t: number; display: string }> = ({ t, display 
   let idx = secs.findIndex((s) => t >= s.start && t < s.end);
   if (idx < 0) idx = secs.length - 1;
   const mix = idx > 0 ? clamp01((t - secs[idx].start) / FADE) : 1;
-  const sub = energyAt(energy.sub, t);
+  const sub = energyAt(energy.drive, t);
   return (
     <AbsoluteFill style={{ backgroundColor: theme.bg, overflow: "hidden" }}>
       <AbsoluteFill

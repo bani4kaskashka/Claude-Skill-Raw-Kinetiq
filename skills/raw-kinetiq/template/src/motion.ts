@@ -21,7 +21,8 @@ export type Enter =
   | "flip" // each word flips up into place as it is sung
   | "scatter" // each word's letters fly in from all over and gather
   | "glitch" // the burst stutters in, sliced and offset
-  | "stretch"; // each word grows up from the baseline, springy
+  | "stretch" // each word grows up from the baseline, springy
+  | "breathe"; // each word exhales into place as it is sung: out of a blur, letters drawing together
 
 /** how a burst leaves */
 export type Exit =
@@ -35,7 +36,8 @@ export type Exit =
   | "sink" // sinks below a mask line
   | "scatter" // letters blow apart
   | "glitch" // stutters and flickers out
-  | "wipe"; // wiped away left to right
+  | "wipe" // wiped away left to right
+  | "drift"; // floats up and dissolves like smoke, slowly, while the next burst arrives
 
 /** where bursts sit */
 export type Layout =
@@ -73,6 +75,21 @@ export type Part = {
   skew?: number;
 };
 
+/**
+ * How the camera moves through a section (the background moves fully, the lyrics a little less,
+ * for depth). Section changes blend from one move into the next.
+ */
+export type CameraMove =
+  | "still" // no move (beat-driven songs still get kick shake)
+  | "float" // slow handheld drift, never quite at rest
+  | "push" // slowly pushes in across the section
+  | "pull" // slowly pulls back across the section
+  | "pan" // travels sideways across the section
+  | "rise" // cranes up across the section
+  | "orbit" // slowly turns, like circling the scene
+  | "breathe"; // swells in and out with the voice
+export type Camera = CameraMove | { move: CameraMove; amount?: number };
+
 /** background family per section kind, or explicit layer lists per kind */
 export type Scenes = "hard" | "neon" | "soft" | "minimal" | Partial<Record<SectionKind, string[][]>>;
 
@@ -84,6 +101,8 @@ export type Motion = {
   energy: number;
   /** background scenes */
   scenes: Scenes;
+  /** camera move; unset = a different gentle move per section kind on soft songs, still on hard ones */
+  camera?: Camera;
 };
 
 const P = (burst: number, enter: Enter, exit: Exit, layout: Layout, size = 1, highlight = "accent"): Part => ({
@@ -116,7 +135,7 @@ export const RECIPES: Record<string, Motion> = {
 /** old name */
 export const PROFILES = RECIPES;
 
-type PartialMotion = { profile?: string; recipe?: string; verse?: Partial<Part>; drop?: Partial<Part>; energy?: number; scenes?: Scenes };
+type PartialMotion = { profile?: string; recipe?: string; verse?: Partial<Part>; drop?: Partial<Part>; energy?: number; scenes?: Scenes; camera?: Camera };
 
 const merge = (base: Motion, o?: PartialMotion): Motion => {
   if (!o) return base;
@@ -127,6 +146,7 @@ const merge = (base: Motion, o?: PartialMotion): Motion => {
     drop: { ...b.drop, ...(o.drop ?? {}) },
     energy: o.energy ?? b.energy,
     scenes: o.scenes ?? b.scenes,
+    camera: o.camera ?? b.camera,
   };
 };
 
@@ -136,3 +156,13 @@ export const SONG_MOTION: Motion = typeof cfg === "string" ? (RECIPES[cfg] ?? RE
 
 /** motion for one section, with that section's own overrides applied */
 export const motionFor = (s: Section | undefined): Motion => merge(SONG_MOTION, (s as { motion?: PartialMotion } | undefined)?.motion);
+
+// soft songs that don't pick a camera still move, differently in each kind of section
+const SOFT_CAMERA: Record<SectionKind, CameraMove> = { intro: "push", verse: "float", build: "push", drop: "breathe", break: "orbit", outro: "pull" };
+
+/** The camera for one section: its own, the song's, or the default for its kind. */
+export const cameraFor = (s: Section): { move: CameraMove; amount: number } => {
+  const c = motionFor(s).camera;
+  if (c) return typeof c === "string" ? { move: c, amount: 1 } : { move: c.move, amount: c.amount ?? 1 };
+  return motionFor(s).energy < 0.5 ? { move: SOFT_CAMERA[s.kind], amount: 1 } : { move: "still", amount: 1 };
+};

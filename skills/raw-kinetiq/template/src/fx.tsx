@@ -1,7 +1,8 @@
 import React from "react";
 import { AbsoluteFill, random } from "remotion";
-import { H, Section, U, W, clamp01, energy, energyAt, lastAtOrBefore, overlays, pulse, theme, timeline } from "./data";
+import { H, HITS, Section, U, W, clamp01, easeInOut, energy, energyAt, lastAtOrBefore, overlays, pulse, theme, timeline } from "./data";
 import { hexA } from "./themes";
+import { cameraFor } from "./motion";
 
 const TUNNEL_SPEED: Record<Section["kind"], number> = {
   intro: 0.08,
@@ -14,8 +15,8 @@ const TUNNEL_SPEED: Record<Section["kind"], number> = {
 
 /** Concentric squares rushing at the camera, with a sub-bass glow behind them. */
 export const Tunnel: React.FC<{ t: number; section: Section; travel: number; bare?: boolean }> = ({ t, section, travel, bare }) => {
-  const sub = energyAt(energy.sub, t);
-  const kick = pulse(timeline.kicks, t, 7);
+  const sub = energyAt(energy.drive, t);
+  const kick = pulse(HITS, t, 7);
   const N = 16;
   const reach = Math.hypot(W, H) * 2;
   const squares = [];
@@ -225,3 +226,65 @@ export const shakeOffset = (t: number, amount: number) => {
     r: (random(`sr${step}`) - 0.5) * 2 * amount * 0.04,
   };
 };
+
+export type Cam = { x: number; y: number; z: number; r: number };
+const STILL: Cam = { x: 0, y: 0, z: 1, r: 0 };
+
+/** The voice's loudness over the last 0.4 s, so moves that follow it swell instead of twitch. */
+const voiceSmooth = (t: number) => {
+  const curve = energy.voc ?? energy.rms;
+  let sum = 0;
+  for (let k = 0; k < 8; k++) sum += energyAt(curve, t - k * 0.05);
+  return sum / 8;
+};
+
+/** Where the camera is in one section at time t (`cameraFor` says which move). */
+const shot = (s: Section, t: number): Cam => {
+  const { move, amount: a } = cameraFor(s);
+  if (move === "still") return STILL;
+  const e = easeInOut(clamp01((t - s.start) / Math.max(1, s.end - s.start)));
+  // a slow wander under every move, so the frame is never frozen
+  const c: Cam = {
+    x: (Math.sin(t * 0.23 + 1.3) + 0.5 * Math.sin(t * 0.51)) * 0.008 * W * a,
+    y: (Math.sin(t * 0.19) + 0.5 * Math.sin(t * 0.43 + 2)) * 0.008 * H * a,
+    z: 1,
+    r: Math.sin(t * 0.13 + 0.7) * 0.4 * a,
+  };
+  if (move === "float") {
+    c.x *= 1.6;
+    c.y *= 1.6;
+    c.r *= 1.5;
+    c.z = 1.02 + 0.015 * Math.sin(t * 0.17);
+  } else if (move === "push") c.z = 1 + 0.14 * a * e;
+  else if (move === "pull") c.z = 1 + 0.14 * a * (1 - e);
+  else if (move === "pan") c.x += (0.5 - e) * 0.07 * a * W;
+  else if (move === "rise") c.y += (e - 0.5) * 0.07 * a * H;
+  else if (move === "orbit") {
+    c.r += (e - 0.5) * 5 * a;
+    c.z = 1.03;
+  } else if (move === "breathe") c.z = 1 + 0.06 * a * voiceSmooth(t);
+  return c;
+};
+
+const CAM_BLEND = 1.6;
+
+/** The camera at time t: this section's move, blended out of the last section's over 1.6 s. */
+export const cameraAt = (t: number): Cam => {
+  const secs = timeline.sections;
+  const i = Math.max(0, secs.findIndex((s) => t >= s.start && t < s.end));
+  const cur = shot(secs[i] ?? secs[secs.length - 1], t);
+  const k = i > 0 ? easeInOut(clamp01((t - secs[i].start) / CAM_BLEND)) : 1;
+  if (k >= 1) return cur;
+  const prev = shot(secs[i - 1], t);
+  return { x: prev.x + (cur.x - prev.x) * k, y: prev.y + (cur.y - prev.y) * k, z: prev.z + (cur.z - prev.z) * k, r: prev.r + (cur.r - prev.r) * k };
+};
+
+/** CSS for the background (the full move, scaled up just enough to keep the frame covered). */
+export const camBack = (c: Cam) => {
+  const rad = (Math.abs(c.r) * Math.PI) / 180;
+  const cover = Math.cos(rad) + (Math.max(W, H) / Math.min(W, H)) * Math.sin(rad) + 2 * Math.max(Math.abs(c.x) / W, Math.abs(c.y) / H);
+  return `translate(${c.x}px, ${c.y}px) rotate(${c.r}deg) scale(${Math.max(1, cover) * c.z})`;
+};
+
+/** CSS for the lyrics: about a third of the move, so they float in front of the scene. */
+export const camFront = (c: Cam) => `translate(${0.35 * c.x}px, ${0.35 * c.y}px) rotate(${0.35 * c.r}deg) scale(${1 + 0.35 * (c.z - 1)})`;
