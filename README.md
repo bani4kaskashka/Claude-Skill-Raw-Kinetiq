@@ -4,7 +4,7 @@ A Claude Code skill that turns a song into a kinetic typography lyric video. Han
 audio file, answer four quick questions, and get back an MP4 where every word hits when it's
 sung, and where the whole look, from the fonts to the background, is designed for that one song.
 
-![RAW KINETIQ demo](media/demo.gif)
+![RAW KINETIQ demo](https://raw.githubusercontent.com/bani4kaskashka/Claude-Skill-Raw-Kinetiq/media/demo.gif)
 
 *Above: a phonk track, so hard slams and slashes. Your song gets its own look.*
 
