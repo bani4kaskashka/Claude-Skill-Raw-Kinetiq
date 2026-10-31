@@ -20,6 +20,10 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageOps
 
+# transcripts can hold emoji; a Windows console would crash printing them
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
 MAX = 2560
 

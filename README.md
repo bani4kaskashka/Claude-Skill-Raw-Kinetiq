@@ -23,6 +23,10 @@ sung, and where the whole look, from the fonts to the background, is designed fo
   slow ballad keeps moving too. When the song has an image the toolkit doesn't (a song about
   being watched gets a building whose windows light up one by one), Claude writes it for that
   song. Two songs should never come out looking alike.
+- **Acts out the lyrics.** Claude storyboards the song line by line and draws moments for it in
+  code: a hand flicking through a phone's contacts that stops on one name as "name" is sung, a
+  corridor of exit signs racing past, a mouth the camera dives into. Each is timed to its words,
+  with its own camera and the lyrics placed around it. No image generators: every shape is drawn.
 - **Uses your images.** Cover art, photos, a picture of you: send them in the chat or point
   to a folder. Claude looks at each one, cuts out people and objects when that helps, picks
   colours from them, and places them where the song needs them (a backdrop for the bridge, a

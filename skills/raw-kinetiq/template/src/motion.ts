@@ -54,8 +54,10 @@ export type Layout =
 export type Part = {
   /** most words on screen at once; 0 = the whole line (wraps) */
   burst: number;
-  enter: Enter;
-  exit: Exit;
+  /** a built-in enter, or the name of an effect written for this song (custom/index.tsx) */
+  enter: Enter | (string & {});
+  /** a built-in exit, or the name of an effect written for this song */
+  exit: Exit | (string & {});
   layout: Layout;
   /** type size, 1 = normal verse size */
   size: number;

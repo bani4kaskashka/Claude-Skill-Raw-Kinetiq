@@ -4,6 +4,70 @@ import { H, Line, TS, U, W, Word, X, Y, caps, clamp01, easeInOut, easeOutExpo, f
 import { family, textWidth } from "./fonts";
 import { Exit, Part, motionFor } from "./motion";
 import { hexA } from "./themes";
+import * as custom from "./custom";
+
+/**
+ * A way for words to arrive and/or leave, written for one song (custom/index.tsx, "effects").
+ * Use its name as a motion part's "enter" and/or "exit".
+ */
+export type FxWord = {
+  /** the word as shown (case applied) */
+  text: string;
+  /** its timing: w.s = sung at, w.e = done */
+  w: Word;
+  t: number;
+  /** seconds since it was sung (negative before) */
+  since: number;
+  sung: boolean;
+  /** 0 while the burst is on screen, 0..1 while it leaves */
+  e: number;
+  /** stable per word, for random() */
+  seed: string;
+  /** colour right now (the highlight while it is sung) */
+  color: string;
+  /** colour/outline styling to spread onto the text */
+  ink: React.CSSProperties;
+};
+export type FxBurst = {
+  t: number;
+  /** 0..1 through the enter (over enterDur) */
+  p: number;
+  /** 0..1 through the exit (over exitDur) */
+  e: number;
+  /** the burst's text and font size in px */
+  text: string;
+  size: number;
+  seed: string;
+  kind: "verse" | "drop";
+  /** when it arrives, when it starts to leave */
+  first: number;
+  out: number;
+};
+export type FxStyle = {
+  /** appended to the burst's transform, e.g. " scale(1.2)" */
+  transform?: string;
+  opacity?: number;
+  /** px at 1080p */
+  blur?: number;
+  clip?: string;
+  filter?: string;
+  /** drawn over the burst's text box (cracks, a strike, frost); position it absolutely */
+  over?: React.ReactNode;
+};
+export type Effect = {
+  /** each word: return the word's element (it can split into letters) */
+  word?: (f: FxWord) => React.ReactNode;
+  /** the whole burst while it arrives and leaves */
+  burst?: (f: FxBurst) => FxStyle;
+  /** seconds the enter takes (default 0.3) */
+  enterDur?: number;
+  /** seconds the exit takes (default 0.5) */
+  exitDur?: number;
+  /** the exit may play on while the next burst arrives (like "drift"); default: it finishes first */
+  overlap?: boolean;
+};
+// read at render time (custom/ may import from this file); older projects have no "effects" export
+const fxOf = (name: string): Effect | undefined => ((custom as { effects?: Record<string, Effect> }).effects ?? {})[name];
 
 export type LineProps = { line: Line; t: number; display: string; chroma: number };
 type P = LineProps;
@@ -168,6 +232,11 @@ const BurstWord: React.FC<{ w: Word; t: number; part: Part; e: number; seed: str
     ? { color: sung ? color : "transparent", WebkitTextStroke: `${Math.max(1.5, 2.2 * U)}px ${base}` }
     : { color };
   const since = t - (w.s - LEAD);
+  // this song's own effects
+  const fxOut = fxOf(part.exit);
+  if (e > 0 && fxOut?.word) return <>{fxOut.word({ text, w, t, since, sung, e, seed, color, ink })}</>;
+  const fxIn = fxOf(part.enter);
+  if (fxIn?.word) return <>{fxIn.word({ text, w, t, since, sung, e: fxIn === fxOut ? e : 0, seed, color, ink })}</>;
   if (e > 0 && part.exit === "fall")
     return (
       <Letters
@@ -295,7 +364,10 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
   const side = Math.max(140 * X, 56 * U);
   const maxW = W - 2 * side;
   const beat = kind === "drop" && motion.energy > 0.6 ? pulse(timeline.beats, t, 10) * motion.energy : 0;
-  const dur = EXIT_DUR[part.exit];
+  const fxIn = fxOf(part.enter);
+  const fxOut = fxOf(part.exit);
+  const dur = (EXIT_DUR as Record<string, number>)[part.exit] ?? fxOut?.exitDur ?? 0.5;
+  const slowExit = SLOW_EXIT.has(part.exit as Exit) || (!!fxOut && dur > 0);
   // the next line's first word: a slow exit has to be gone before it lands too
   const after = timeline.lines.find((l) => l.start > line.start && (l.mode === "verse" || l.mode === "drop"));
   const nextLine = after?.words[0] ? after.words[0].s - LEAD : Infinity;
@@ -307,10 +379,10 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
         const next = ci + 1 < chunks.length ? chunks[ci + 1][0].s - LEAD : null;
         // leave once the last word is done, but clear of the next burst ("cut" leaves exactly as it lands)
         // slow exits finish before the next burst lands in the same spot
-        const clear = part.exit === "drift" ? dur * 0.4 : SLOW_EXIT.has(part.exit) ? dur * 0.85 : 0.06;
+        const clear = part.exit === "drift" || fxOut?.overlap ? dur * 0.4 : slowExit ? dur * 0.85 : 0.06;
         const out =
           next === null
-            ? Math.max(first + 0.12, Math.min(line.out, nextLine - (SLOW_EXIT.has(part.exit) ? clear : 0)))
+            ? Math.max(first + 0.12, Math.min(line.out, nextLine - (slowExit ? clear : 0)))
             : part.exit === "cut"
               ? next
               : Math.max(first + 0.12, Math.min(next - clear, Math.max(lastE + 0.1, first + 0.25)));
@@ -371,7 +443,7 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
         }
 
         // whole-burst enter
-        const ed = ENTER_DUR[part.enter] ?? 0.13;
+        const ed = (ENTER_DUR as Record<string, number>)[part.enter] ?? fxIn?.enterDur ?? (fxIn ? 0.3 : 0.13);
         const p = easeOutExpo(clamp01((t - first) / ed));
         let enterT = "";
         let enterOp = 1;
@@ -431,6 +503,24 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
             exitBlur = 7 * e;
           }
         }
+        // this song's own effects on the whole burst
+        let over: React.ReactNode = null;
+        const applyFx = (fx: Effect, pp: number, ee: number) => {
+          const r = fx.burst?.({ t, p: pp, e: ee, text, size, seed, kind, first, out });
+          if (!r) return;
+          if (r.transform) enterT += r.transform;
+          if (r.opacity !== undefined) enterOp *= r.opacity;
+          if (r.blur) enterBlur += r.blur;
+          if (r.clip) clip = r.clip;
+          if (r.filter) fxFilter = `${fxFilter} ${r.filter}`;
+          if (r.over) over = r.over;
+        };
+        let fxFilter = "";
+        if (fxIn && fxIn === fxOut) applyFx(fxIn, p, e);
+        else {
+          if (fxIn) applyFx(fxIn, p, 0);
+          if (fxOut && e > 0) applyFx(fxOut, 1, e);
+        }
         const blur = enterBlur + exitBlur;
         const settled = p > 0.97 && t < out && (part.enter !== "wipe" || t > lastE);
         const skew = part.skew ? ` skewX(${part.skew}deg)` : "";
@@ -438,12 +528,12 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
           part.layout === "stack"
             ? words.map((w, i) => (
                 <div key={i}>
-                  <BurstWord w={w} t={t} part={part} e={part.exit === "fall" || part.exit === "scatter" ? e : 0} seed={`${seed}-${i}`} />
+                  <BurstWord w={w} t={t} part={part} e={part.exit === "fall" || part.exit === "scatter" || fxOut ? e : 0} seed={`${seed}-${i}`} />
                 </div>
               ))
             : words.map((w, i) => (
                 <React.Fragment key={i}>
-                  <BurstWord w={w} t={t} part={part} e={part.exit === "fall" || part.exit === "scatter" ? e : 0} seed={`${seed}-${i}`} />
+                  <BurstWord w={w} t={t} part={part} e={part.exit === "fall" || part.exit === "scatter" || fxOut ? e : 0} seed={`${seed}-${i}`} />
                   {i < words.length - 1 ? " " : ""}
                 </React.Fragment>
               ));
@@ -462,11 +552,13 @@ const BurstLine: React.FC<P & { kind: "verse" | "drop" }> = ({ line, t, chroma, 
               textShadow: part.stroke ? undefined : rgb(chroma * (kind === "drop" ? 1.4 : 1)),
               transform: `translate(${x}px, ${(part.exit === "sink" ? 0 : y) + sink * size * 1.1}px) rotate(${r}deg)${skew}${enterT}${exitT} scale(${1 + 0.03 * beat})`,
               opacity: enterOp * exitOp,
-              filter: blur > 0.05 ? `blur(${blur * U}px)` : undefined,
+              filter: blur > 0.05 || fxFilter ? `${blur > 0.05 ? `blur(${blur * U}px)` : ""}${fxFilter}`.trim() : undefined,
               clipPath: clip,
+              position: "relative",
             }}
           >
             {body}
+            {over}
           </div>
         );
         const block = (

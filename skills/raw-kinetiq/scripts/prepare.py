@@ -22,6 +22,10 @@ from pathlib import Path
 
 import numpy as np
 
+# transcripts can hold emoji; a Windows console would crash printing them
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 FPS = 60
 
 

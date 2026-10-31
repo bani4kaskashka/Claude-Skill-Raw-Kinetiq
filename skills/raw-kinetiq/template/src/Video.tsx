@@ -7,7 +7,9 @@ import { DropFlash, Hud, Overlay, camBack, camFront, cameraAt, shakeOffset } fro
 import { family, loadFonts } from "./fonts";
 import { motionFor } from "./motion";
 import { ChantLine, DropLine, LineProps, OutroLine, ShoutLine, TunnelLine, VerseLine, checkTag } from "./lyrics";
-import { Foreground, modes as customModes } from "./custom";
+import * as custom from "./custom";
+import { MomentLayer, covered, lyricPlace, momentReport, worldCam } from "./moments";
+import { Foreground, layers as customLayers, modes as customModes } from "./custom";
 
 const RENDERERS: Record<string, React.FC<LineProps>> = {
   verse: VerseLine,
@@ -80,7 +82,7 @@ const seen = (el: Element, box: Box, stop: Element | null = null) => {
  * as one console line the check script collects. Text is measured letter group by letter
  * group, so words still hidden (behind a mask, scaled to nothing, not yet typed) don't count.
  */
-const Checker: React.FC<{ frame: number }> = ({ frame }) => {
+const Checker: React.FC<{ frame: number; t: number }> = ({ frame, t }) => {
   useLayoutEffect(() => {
     const items = [...document.querySelectorAll<HTMLElement>("[data-check]")].map((el) => {
       let box: Box | null = null;
@@ -121,7 +123,10 @@ const Checker: React.FC<{ frame: number }> = ({ frame }) => {
       };
     });
     const palette = { bg: theme.bg, text: theme.text, accent: theme.accent, accent2: theme.accent2 };
-    console.log(`RKCHECK ${JSON.stringify({ frame, W, H, palette, items })}`);
+    // what was written for this song, so the check can tell it from the built-in toolkit
+    const own = { effects: Object.keys((custom as { effects?: object }).effects ?? {}), layers: Object.keys(customLayers), modes: Object.keys(customModes) };
+    const moments = momentReport(t);
+    console.log(`RKCHECK ${JSON.stringify({ frame, W, H, palette, items, custom: own, moments })}`);
   });
   return null;
 };
@@ -161,15 +166,25 @@ export const LyricVideo: React.FC = () => {
     <AbsoluteFill style={{ backgroundColor: theme.bg, width: W, height: H }}>
       <AbsoluteFill style={{ opacity: fadeIn }}>
         <AbsoluteFill style={{ transform: camBack(cam) }}>
-          <Backdrop t={t} display={display} />
-          <AssetLayer t={t} layer="back" />
+          {!covered(t) && (
+            <AbsoluteFill style={{ transform: worldCam(t) || undefined }}>
+              <Backdrop t={t} display={display} />
+              <AssetLayer t={t} layer="back" />
+            </AbsoluteFill>
+          )}
+          <MomentLayer t={t} layer="back" display={display} />
         </AbsoluteFill>
         <AbsoluteFill style={{ transform: `${camFront(cam)} translate(${shake.x}px, ${shake.y}px) rotate(${shake.r}deg) scale(${punch})` }}>
-          {live.map((l) => {
-            const R = RENDERERS[l.mode] ?? VerseLine;
-            return <R key={`${l.start}-${l.mode}`} line={l} t={t} display={display} chroma={chroma} />;
-          })}
+          <AbsoluteFill style={lyricPlace(t, display)}>
+            {live.map((l) => {
+              const R = RENDERERS[l.mode] ?? VerseLine;
+              return <R key={`${l.start}-${l.mode}`} line={l} t={t} display={display} chroma={chroma} />;
+            })}
+          </AbsoluteFill>
           {config.endCard !== false && <EndCard t={t} display={display} />}
+        </AbsoluteFill>
+        <AbsoluteFill style={{ transform: camBack(cam) }}>
+          <MomentLayer t={t} layer="front" display={display} />
         </AbsoluteFill>
         <AssetLayer t={t} layer="front" />
         {Foreground && <Foreground t={t} />}
@@ -178,7 +193,7 @@ export const LyricVideo: React.FC = () => {
       <Overlay frame={frame} />
       <Hud t={t} section={section} mono={family("mono")} />
       {!CHECK && <Audio src={staticFile(config.audio)} />}
-      {CHECK && <Checker frame={frame} />}
+      {CHECK && <Checker frame={frame} t={t} />}
     </AbsoluteFill>
   );
 };

@@ -27,6 +27,11 @@ import json
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
+import sys
+
+# transcripts can hold emoji; a Windows console would crash printing them
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ap = argparse.ArgumentParser()
 ap.add_argument("work")

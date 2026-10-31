@@ -13,9 +13,22 @@ Finds, in every sampled frame:
 And across the song (with the lyrics masked out):
   same-look   most sections look alike (must-fix), or a chorus looks just like its verse
   still       a section where the picture barely moves
+  one-shot    one framing keeps coming back across the song, only re-tinted (must-fix past half the song)
+And whether it is made for this song:
+  no-design     work/design.md is missing (must-fix)
+  no-signature  the choruses only use built-in moves, nothing written for this song (must-fix)
+  borrowed      built-in moves and line styles made for earlier songs (slam, slash, cut, glitch, chant...)
+  stock-world   every background is a built-in layer
+And whether anything happens because of what the lines say (custom "moments"):
+  no-storyboard work/storyboard.md is missing (must-fix)
+  no-moments    no moments at all (must-fix)
+  few-moments   fewer than one moment per 20 s of singing (must-fix under one per 40 s)
+  bare          a long stretch of singing where nothing is drawn for the words
+  timid-camera  most moments barely move the camera, or none dives or makes a big move (must-fix)
 
 Writes check/report.md, check/issues.png (the flagged frames, problems boxed in red) and
-check/overview.png (frames across the whole song, to judge the look and the flow).
+check/overview.png (frames across the whole song, to judge the look and the flow) and
+check/moments.png (every moment at its start, middle and end, to judge the drawings).
 """
 import json
 import math
@@ -24,6 +37,10 @@ import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+
+# transcripts can hold emoji; a Windows console would crash printing them
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 proj = Path(sys.argv[1])
 vid = proj / "video"
@@ -145,6 +162,9 @@ for f in frames:
     lyr = [i for i in items if i["kind"] == "lyric"]
     settled = [i for i in lyr if i["state"] == "settled"]
     imgs = [i for i in items if i["kind"] == "asset"]
+    # a moment's camera diving through the frame carries the words off with it: a transition
+    if any(m.get("dive") for m in r.get("moments") or []):
+        settled = []
     for i in settled:
         out_x = max(0, -i["x"], i["x"] + i["w"] - W)
         out_y = max(0, -i["y"], i["y"] + i["h"] - H)
@@ -214,6 +234,40 @@ def look_of(f):
     return [(a.getpixel((x, y)), mk.getpixel((x, y)) > 128) for y in range(GH) for x in range(GW)]
 
 
+SW, SH = 64, 36
+
+
+def shape_of(f):
+    """Where the edges are (lines, horizons, shapes) at 64x36, lyrics masked: the framing of a shot,
+    whatever its colours. Smooth light (vignettes, glows) has no edges, so dark shots don't all match."""
+    p = frame_path(f)
+    if not p:
+        return None
+    im = Image.open(p).convert("L").resize((SW + 1, SH + 1), Image.BOX)
+    m = Image.new("L", Image.open(p).size, 255)
+    d = ImageDraw.Draw(m)
+    for i in records[f]["items"]:
+        if i["kind"] == "lyric" and i["op"] > 0.05 and i["w"] > 0:
+            pad = 0.15 * i["h"]
+            d.rectangle([(i["x"] - pad) * scale, (i["y"] - pad) * scale, (i["x"] + i["w"] + pad) * scale, (i["y"] + i["h"] + pad) * scale], fill=0)
+    mk = m.resize((SW, SH), Image.BOX)
+    px = im.load()
+    return [(abs(px[x + 1, y] - px[x, y]) + abs(px[x, y + 1] - px[x, y]), mk.getpixel((x, y)) > 200) for y in range(SH) for x in range(SW)]
+
+
+def shape_mean(shapes):
+    n = len(shapes)
+    return [(sum(sh[k][0] for sh in shapes) / n, all(sh[k][1] for sh in shapes)) for k in range(len(shapes[0]))]
+
+
+def shape_corr(A, B):
+    xs, ys = zip(*[(a, b) for (a, ma), (b, mb) in zip(A, B) if ma and mb] or [(0, 0)])
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    sx = sum((x - mx) ** 2 for x in xs) ** 0.5
+    sy = sum((y - my) ** 2 for y in ys) ** 0.5
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / max(1e-6, sx * sy)
+
+
 def look_dist(A, B):
     d = [sum(abs(pa[c] - pb[c]) for c in range(3)) / 3 for (pa, ma), (pb, mb) in zip(A, B) if ma and mb]
     return sum(d) / max(1, len(d)) / 255
@@ -243,7 +297,9 @@ for s in timeline["sections"]:
     if len(looks) < 3:
         continue
     move = sum(look_dist(a, b) for a, b in zip(looks, looks[1:])) / (len(looks) - 1)
-    sec_looks.append({"s": s, "look": look_mean(looks), "move": move, "first": fs[0], "last": fs[-1]})
+    shapes = [x for x in (shape_of(f) for f in fs) if x]
+    sec_looks.append({"s": s, "look": look_mean(looks), "shape": shape_mean(shapes), "move": move, "first": fs[0], "last": fs[-1]})
+SHOT_CORR, SHOT_SHARE = 0.85, 0.4  # one-shot: same framing, and how much of the song it may fill
 alike = lambda a, b: look_corr(a["look"], b["look"]) > 0.9 and look_dist(a["look"], b["look"]) < 0.04
 song_look = []  # findings about the whole song, added to the report below
 pairs = [(a, b) for i, a in enumerate(sec_looks) for b in sec_looks[i + 1:]]
@@ -255,10 +311,152 @@ else:
         if b["s"]["kind"] == "drop" and a["s"]["kind"] != "drop" and alike(a, b):
             song_look.append({"kind": "same-look", "text": f"{a['s']['name']} / {b['s']['name']}", "first": b["first"], "last": b["last"], "n": 1, "boxes": [],
                               "detail": "the chorus looks just like what comes before it"})
+# one shot that keeps coming back: sections with the same framing (whatever their tint), wherever they are
+root = list(range(len(sec_looks)))
+
+
+def find(i):
+    while root[i] != i:
+        i = root[i]
+    return i
+
+
+for i, a in enumerate(sec_looks):
+    for j in range(i + 1, len(sec_looks)):
+        b = sec_looks[j]
+        if shape_corr(a["shape"], b["shape"]) > SHOT_CORR:
+            root[find(j)] = find(i)
+clusters = {}
+for i, x in enumerate(sec_looks):
+    clusters.setdefault(find(i), []).append(x)
+song_len = sum(x["s"]["end"] - x["s"]["start"] for x in sec_looks) or 1
+big = max(clusters.values(), key=lambda c: sum(x["s"]["end"] - x["s"]["start"] for x in c), default=[])
+share = sum(x["s"]["end"] - x["s"]["start"] for x in big) / song_len
+if len(big) >= 3 and share > SHOT_SHARE and not any(x["kind"] == "same-look" and not x["text"] for x in song_look):
+    song_look.append({"kind": "one-shot", "text": ", ".join(x["s"]["name"] for x in big), "first": big[0]["first"], "last": big[-1]["last"],
+                      "n": 1, "boxes": [], "song": True, "fix": share > 0.5,
+                      "detail": f"{100 * share:.0f}% of the song is one framing: give these sections their own shot "
+                                "(scale, angle, what is in the frame), not just a new tint"})
 for x in sec_looks:
     if x["move"] < 0.0025 and x["s"]["end"] - x["s"]["start"] > 6:
         song_look.append({"kind": "still", "text": x["s"]["name"], "first": x["first"], "last": x["last"], "n": 1, "boxes": [],
                           "detail": "the picture barely moves"})
+
+# Is it made for this song? The built-in moves and line styles were made for earlier songs;
+# reusing them by default is what makes videos look alike.
+RECIPE_PARTS = {"aggressive": (("slam", "slash"), ("slam", "slash")), "bounce": (("pop", "push"), ("pop", "cut")),
+                "pulse": (("rise", "cut"), ("slam", "cut")), "smooth": (("fade", "blur"), ("fade", "blur")),
+                "story": (("type", "fade"), ("rise", "fade")), "anthem": (("rise", "fall"), ("drop", "fall"))}
+BORROWED = {"slam", "slash", "cut", "glitch"}
+BUILTIN_MODES = {"chant", "shout", "tunnel", "outro"}
+cfg = json.loads((vid / "src/data/config.json").read_text(encoding="utf-8"))
+own = records[frames[0]].get("custom") or {}
+own_fx, own_layers, own_modes = (set(own.get(k, [])) for k in ("effects", "layers", "modes"))
+
+
+def part_of(motion, mode, base):
+    # (enter, exit) of a motion part after a recipe/override, like motion.ts merge()
+    if isinstance(motion, str):
+        b = RECIPE_PARTS.get(motion, RECIPE_PARTS["pulse"])
+        return b[0 if mode == "verse" else 1]
+    if not isinstance(motion, dict):
+        return base
+    name = motion.get("recipe") or motion.get("profile")
+    b = RECIPE_PARTS[name][0 if mode == "verse" else 1] if name in RECIPE_PARTS else base
+    o = motion.get(mode) or {}
+    return (o.get("enter", b[0]), o.get("exit", b[1]))
+
+
+song_parts = {m: part_of(cfg.get("motion"), m, RECIPE_PARTS["pulse"][0 if m == "verse" else 1]) for m in ("verse", "drop")}
+secs = {s["name"]: s for s in timeline["sections"]}
+uses = []  # (mode, enter, exit, own?) per sung line
+for ln in timeline["lines"]:
+    m = ln.get("mode")
+    if m in ("verse", "drop"):
+        en, ex = part_of(secs.get(ln.get("section"), {}).get("motion"), m, song_parts[m])
+        uses.append((m, en, ex, en in own_fx or ex in own_fx))
+    elif m:
+        uses.append((m, None, None, m in own_modes))
+borrowed = {}
+for m, en, ex, mine in uses:
+    for k in (en, ex):
+        if k in BORROWED:
+            borrowed[k] = borrowed.get(k, 0) + 1
+    if m in BUILTIN_MODES and m not in own_modes:
+        borrowed[f"{m} (built-in)"] = borrowed.get(f"{m} (built-in)", 0) + 1
+peak = [u for u in uses if u[0] != "verse"] or uses
+whole = {"first": frames[0], "last": frames[-1], "n": 1, "boxes": [], "song": True}
+if not (proj / "work" / "design.md").exists():
+    song_look.append({"kind": "no-design", "text": "", **whole, "fix": True,
+                      "detail": "work/design.md is missing: write the song's concept, signature moves and shot list first (SKILL.md 2b)"})
+if uses and not any(u[3] for u in peak):
+    song_look.append({"kind": "no-signature", "text": "", **whole, "fix": True,
+                      "detail": "the choruses only use built-in moves: write this song's own enter/exit in video/src/custom "
+                                "(effects) from its central image and use it where the song peaks"})
+if borrowed:
+    song_look.append({"kind": "borrowed", "text": ", ".join(f"{k} x{v}" for k, v in sorted(borrowed.items(), key=lambda kv: -kv[1])), **whole,
+                      "detail": "built-in moves made for earlier songs: keep one only if design.md says why this song needs it"})
+named = set()
+mot = cfg.get("motion")
+if isinstance(mot, dict) and isinstance(mot.get("scenes"), dict):
+    named |= {x for variants in mot["scenes"].values() for v in variants for x in v}
+for s in timeline["sections"]:
+    named |= set(s.get("scene") or [])
+if not named & own_layers:
+    song_look.append({"kind": "stock-world", "text": "", **whole,
+                      "detail": "every background is a built-in layer: build the song's own world in video/src/custom (layers)"})
+
+# Moments: things drawn and happening because of what a line says (custom "moments")
+mom = {}  # name -> [(frame, p)]
+cams = {}  # name -> [camera reports]
+for f in frames:
+    for m in records[f].get("moments") or []:
+        mom.setdefault(m["name"], []).append((f, m["p"]))
+        cams.setdefault(m["name"], []).append(m)
+sung_at = lambda t: any(l.get("mode") and l["start"] <= t <= l["end"] for l in lines)
+sung_time = sum(l["end"] - l["start"] for l in lines if l.get("mode"))
+if not (proj / "work" / "storyboard.md").exists():
+    song_look.append({"kind": "no-storyboard", "text": "", **whole, "fix": True,
+                      "detail": "work/storyboard.md is missing: go through the lyrics line by line for what each one shows (SKILL.md 4b)"})
+if not mom:
+    song_look.append({"kind": "no-moments", "text": "", **whole, "fix": True,
+                      "detail": "nothing happens because of what the lines say: draw the storyboard's moments in video/src/custom (moments)"})
+elif len(mom) < sung_time / 20:
+    song_look.append({"kind": "few-moments", "text": f"{len(mom)} for {sung_time:.0f}s of singing", **whole, "fix": len(mom) < sung_time / 40,
+                      "detail": "aim for one every 10-20 s of singing, each chorus with its own"})
+# How hard each moment moves its camera: zoom range, travel, a dive. A 1.1x push reads as a still.
+def cam_move(v):
+    zs = [c.get("z", 1) for c in v]
+    xy = [(c.get("x", 0.5), c.get("y", 0.5)) for c in v]
+    travel = max(math.dist(a, b) for a in xy for b in xy) if len(xy) > 1 else 0
+    turn = max(c.get("r", 0) for c in v) - min(c.get("r", 0) for c in v)
+    return {"zoom": max(zs) / max(1e-6, min(zs)), "travel": travel, "turn": turn, "dive": any(c.get("dive") for c in v)}
+
+
+moves = {n: cam_move(v) for n, v in cams.items()}
+timid = [n for n, c in moves.items() if not c["dive"] and c["zoom"] < 1.3 and c["travel"] < 0.12 and c["turn"] < 8]
+big = [n for n, c in moves.items() if c["dive"] or c["zoom"] >= 1.8 or c["travel"] >= 0.3]
+if moves and (len(timid) > len(moves) / 2 or not big):
+    song_look.append({"kind": "timid-camera", "text": ", ".join(timid), **whole, "fix": True,
+                      "detail": f"{len(timid)} of {len(moves)} moments barely move the camera"
+                                + ("" if big else ", and none dives or makes a big move")
+                                + ": go into the subject (a dive), push hard, whip, or pull back to reveal (a scroll that races past is fine)"})
+
+if mom:
+    # the longest stretch with singing in it and no moment on screen
+    on = {f for v in mom.values() for f, _ in v}
+    run, best = [], []
+    for f in frames:
+        if f in on:
+            run = []
+            continue
+        run.append(f)
+        sung = sum(1 for g in run if sung_at(g / fps)) * meta["every"] / fps
+        if sung > 30 and len(run) > len(best):
+            best = list(run)
+    if best:
+        detail = f"{(best[-1] - best[0]) / fps:.0f}s of singing with nothing drawn for the words"
+        song_look.append({"kind": "bare", "text": "", "first": best[0], "last": best[-1], "n": 1, "boxes": [], "detail": detail})
 
 # group repeats of the same problem on the same text into one finding with a time range
 step = meta["every"]
@@ -278,7 +476,8 @@ for f in gaps:
         runs.append([f, f])
 gap_runs = [r for r in runs if r[1] - r[0] >= step]  # at least two samples in a row
 
-ORDER = {"off-frame": 0, "overlap": 1, "crossing": 2, "gap": 3, "contrast": 4, "tiny": 5, "over-image": 6, "same-look": 7, "still": 8}
+ORDER = {"no-design": -3, "no-storyboard": -2.5, "no-moments": -2.2, "no-signature": -2, "off-frame": 0, "overlap": 1, "crossing": 2, "gap": 3, "contrast": 4, "tiny": 5, "over-image": 6,
+         "same-look": 7, "one-shot": 7.5, "few-moments": 7.6, "bare": 7.7, "timid-camera": 7.8, "still": 8, "borrowed": 9, "stock-world": 10}
 findings = groups + song_look
 for a, b in gap_runs:
     findings.append({"kind": "gap", "text": "", "first": a, "last": b, "n": (b - a) // step + 1, "boxes": [], "detail": f"{(b - a) / fps:.1f}s with no lyric on screen"})
@@ -293,6 +492,9 @@ out.append("")
 for x in findings:
     when = stamp(x["first"]) if x["first"] == x["last"] else f"{stamp(x['first'])}-{stamp(x['last'])}"
     mark = "FIX " if x in serious else "look"
+    if x.get("song"):
+        out.append(f"- [{mark}] {x['kind']:<10} whole song      {x['detail']}" + (f": {x['text']}" if x["text"] else ""))
+        continue
     out.append(f"- [{mark}] {x['kind']:<10} {when:<15} {section_at(x['first'] / fps):<14} {x['text'][:60]!r} {x['detail']}")
 if not findings:
     out.append("No problems found.")
@@ -324,7 +526,7 @@ def sheet(tiles, cols, path):
 
 
 issue_tiles = []
-for x in findings[:24]:
+for x in [x for x in findings if not x.get("song")][:24]:
     f = (x["first"] + x["last"]) // 2 // step * step
     f = min(records, key=lambda g: abs(g - f))
     issue_tiles.append(thumb(f, boxes=x["boxes"], label=f"{x['kind']} {stamp(f)} {x['text'][:40]}"))
@@ -334,5 +536,12 @@ n = 30
 pick = [frames[round(k * (len(frames) - 1) / (n - 1))] for k in range(n)]
 sheet([thumb(f, w=384, label=f"{stamp(f)} {section_at(f / fps)}") for f in pick], 6, chk / "overview.png")
 
+mtiles = []
+for name, v in mom.items():
+    for want in (0.1, 0.5, 0.9):
+        f, p = min(v, key=lambda x: abs(x[1] - want))
+        mtiles.append(thumb(f, w=384, label=f"{name} {stamp(f)} p={p:.1f}"))
+sheet(mtiles, 3, chk / "moments.png")
+
 print("\n".join(out))
-print(f"\nsheets: {chk / 'overview.png'}" + (f"  {chk / 'issues.png'}" if issue_tiles else ""))
+print(f"\nsheets: {chk / 'overview.png'}" + (f"  {chk / 'issues.png'}" if issue_tiles else "") + (f"  {chk / 'moments.png'}" if mtiles else ""))
